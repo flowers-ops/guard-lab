@@ -74,7 +74,7 @@ function sweptLock(points, radius, material, parent, mesh, taper = 0.7) {
 
 // Cosmetic only: both roles wear the same uniform and carry the same badge.
 export function characterDetails({ head, torso, mat, mesh, box, sphere, sign }) {
-  const hair = mat('#352c28', { roughness: 0.92 });
+  const hair = mat('#352923', { roughness: 0.66 });
   const ink = mat('#263034', { roughness: 0.95 });
   const ivory = mat('#d6d3bf', { roughness: 0.95 });
   const trim = mat('#657783', { roughness: 0.98 });
@@ -139,22 +139,22 @@ export function characterDetails({ head, torso, mat, mesh, box, sphere, sign }) 
       -0.014,
     ]);
     tie.rotation.x = Math.PI / 2;
-    const woven = new InstancedMesh(new SphereGeometry(0.037, 12, 8), hair, 24);
+    const woven = new InstancedMesh(new SphereGeometry(0.033, 12, 10), hair, 42);
     woven.castShadow = woven.receiveShadow = true;
     braid.add(woven);
-    for (let i = 0; i < 12; i++)
-      for (let lane = 0; lane < 2; lane++) {
-        const phase = i * Math.PI + lane * Math.PI;
+    for (let i = 0; i < 14; i++)
+      for (let lane = 0; lane < 3; lane++) {
+        const phase = i * 2.1 + (lane * Math.PI * 2) / 3;
         const matrix = new Matrix4().compose(
           new Vector3(
-            side * (0.033 + Math.min(i, 5) * 0.011) + Math.cos(phase) * 0.017,
-            -0.043 - i * 0.056,
-            -Math.min(i, 4) * 0.032,
+            side * (0.033 + Math.min(i, 5) * 0.011) + Math.cos(phase) * 0.019,
+            -0.043 - i * 0.049,
+            -Math.min(i, 4) * 0.032 + Math.sin(phase) * 0.017,
           ),
-          new Quaternion().setFromEuler(new Euler(0, 0, Math.cos(phase) * 0.42)),
-          new Vector3(0.79 - i * 0.014, 1.16, 0.8 - i * 0.012),
+          new Quaternion().setFromEuler(new Euler(Math.sin(phase) * 0.3, 0, Math.cos(phase) * 0.5)),
+          new Vector3(0.83 - i * 0.014, 1.21, 0.78 - i * 0.012),
         );
-        woven.setMatrixAt(i * 2 + lane, matrix);
+        woven.setMatrixAt(i * 3 + lane, matrix);
       }
     const band = mesh(new TorusGeometry(0.027, 0.006, 6, 16), brass, braid, [
       side * 0.088,
@@ -203,18 +203,20 @@ export function createPlayerRig({ mat, mesh, box, sphere, cylinder, sign, unifor
     humanBody = new Group();
   humanBody.position.y = 0.75;
   human.add(humanBody);
+  const shirtProfile = [
+    new Vector2(0, -0.27),
+    new Vector2(0.82, -0.27),
+    new Vector2(0.92, -0.23),
+    new Vector2(0.98, -0.02),
+    new Vector2(1, 0.17),
+    new Vector2(0.82, 0.24),
+    new Vector2(0.36, 0.285),
+    new Vector2(0, 0.285),
+  ];
+  const shirtCurve = new CatmullRomCurve3(shirtProfile.map((p) => new Vector3(p.x, p.y, 0)));
   const shirt = new LatheGeometry(
-    [
-      new Vector2(0, -0.27),
-      new Vector2(0.82, -0.27),
-      new Vector2(0.92, -0.23),
-      new Vector2(0.98, -0.02),
-      new Vector2(1, 0.17),
-      new Vector2(0.82, 0.24),
-      new Vector2(0.36, 0.285),
-      new Vector2(0, 0.285),
-    ],
-    32,
+    shirtCurve.getPoints(48).map((p) => new Vector2(Math.max(0, p.x), p.y)),
+    40,
   );
   shirt.scale(0.218, 1, 0.155);
   const humanTorso = mesh(shirt, uniform, humanBody, [0, 0.245, 0]);
@@ -239,7 +241,8 @@ export function createPlayerRig({ mat, mesh, box, sphere, cylinder, sign, unifor
       hand = new Group();
     arm.position.set(x, 0.455, 0);
     humanBody.add(arm);
-    sphere(0.075, uniform, arm, [0, -0.025, 0]);
+    const sleeve = sphere(0.075, uniform, arm, [0, -0.05, 0]);
+    sleeve.scale.set(0.92, 1.14, 1);
     mesh(new CapsuleGeometry(0.067, 0.146, 5, 16), uniform, arm, [0, -0.135, 0]);
     elbow.position.y = -0.27;
     arm.add(elbow);

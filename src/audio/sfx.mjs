@@ -9,7 +9,14 @@ function audio() {
     context = new AudioContext();
     master = context.createGain();
     master.gain.value = 0.65;
-    master.connect(context.destination);
+    const limiter = context.createDynamicsCompressor();
+    limiter.threshold.value = -8;
+    limiter.knee.value = 10;
+    limiter.ratio.value = 5;
+    limiter.attack.value = 0.003;
+    limiter.release.value = 0.16;
+    master.connect(limiter);
+    limiter.connect(context.destination);
     dry = context.createGain();
     dry.gain.value = 0.85;
     dry.connect(master);
@@ -110,9 +117,17 @@ export function playSound(name, { force = 1, pan = 0 } = {}) {
     } else if (name === 'draw' || name === 'lower') {
       t(340, name === 'draw' ? 680 : 160, 0.28, 0.045, 'sawtooth');
       n(0.07, 0.13, 1800, 0.22);
+    } else if (name === 'spring-wind') {
+      t(180, 460, 0.19, 0.028, 'triangle');
+      for (let i = 0; i < 4; i++) n(0.012, 0.04, 1800, i * 0.035);
+    } else if (name === 'spring-return') {
+      t(290, 85, 0.28, 0.06, 'triangle');
+      t(440, 140, 0.2, 0.025, 'sine', 0.035);
+      n(0.035, 0.07, 1400, 0.25);
     } else if (name === 'punch') {
-      n(0.24, 0.2, 1300);
-      t(180, 60, 0.2, 0.13);
+      n(0.16, 0.14, 2200);
+      t(240, 75, 0.18, 0.12, 'triangle');
+      t(510, 170, 0.12, 0.03, 'sine');
     } else if (name === 'impact') {
       n(0.08, 0.23, 2000);
       t(105, 38, 0.13, 0.22);

@@ -17,7 +17,9 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { ContactShadows } from './contact-shadows.mjs';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { RectAreaLightUniformsLib } from 'three/examples/jsm/lights/RectAreaLightUniformsLib.js';
 import { ROBOT_POS, SAFE_POS, ZONES, hasVision } from '../sim/engine.mjs';
 import { solveArm, orientSegment, actionDuration } from './rig.mjs';
 import {
@@ -78,16 +80,16 @@ export const Room = forwardRef(function Chamber(
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.7));
     renderer.setClearColor('#0c0f11');
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.VSMShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.12;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#0c1013');
-    scene.fog = new THREE.FogExp2('#0c1013', 0.045);
-    const camera = new THREE.PerspectiveCamera(58, 1, 0.05, 60);
-    camera.position.set(-0.35, 3.05, 3.35);
+    scene.fog = new THREE.FogExp2('#101719', 0.027);
+    const camera = new THREE.PerspectiveCamera(49, 1, 0.05, 60);
+    camera.position.set(-0.55, 2.45, 3.65);
     camera.lookAt(0.3, 0.8, -1.5);
     const pmrem = new THREE.PMREMGenerator(renderer),
       envScene = new RoomEnvironment();
@@ -104,7 +106,11 @@ export const Room = forwardRef(function Chamber(
       }),
     );
     composer.addPass(new RenderPass(scene, camera));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(100, 100), 0.35, 0.45, 0.82);
+    // Small world-space contact shadows give joints, clothing and props depth.
+    // The buffer is bounded independently of display resolution.
+    const occlusion = new ContactShadows(scene, camera);
+    composer.addPass(occlusion);
+    const bloom = new UnrealBloomPass(new THREE.Vector2(100, 100), 0.26, 0.58, 1.0);
     composer.addPass(bloom);
     const post = cinematicPass();
     composer.addPass(post);
@@ -113,20 +119,34 @@ export const Room = forwardRef(function Chamber(
     const materials = [],
       textures = [];
     const mat = (color, extra = {}) => {
-      const m = new THREE.MeshStandardMaterial({ color, roughness: 0.65, ...extra });
+      const Material =
+        extra.clearcoat !== undefined || extra.sheen !== undefined
+          ? THREE.MeshPhysicalMaterial
+          : THREE.MeshStandardMaterial;
+      const m = new Material({ color, roughness: 0.65, ...extra });
       materials.push(m);
       return m;
     };
     const m = {
-      wall: mat('#454948', { roughness: 0.92 }),
-      floor: mat('#343b3d', { roughness: 0.55, metalness: 0.14 }),
+      wall: mat('#363f40', { roughness: 0.83 }),
+      floor: mat('#403e38', { roughness: 0.44, metalness: 0.16 }),
       edge: mat('#30393c', { metalness: 0.8, roughness: 0.4 }),
       steel: mat('#758588', { metalness: 0.8, roughness: 0.3 }),
       dark: mat('#111b20', { metalness: 0.6, roughness: 0.5 }),
       orange: mat('#dba15f', { metalness: 0.4, roughness: 0.4 }),
-      robot: mat('#a5aaa4', { metalness: 0.48, roughness: 0.34 }),
-      uniform: mat('#566773', { roughness: 0.85 }),
-      skin: mat('#bc947a'),
+      robot: mat('#d8d2ba', {
+        metalness: 0.24,
+        roughness: 0.3,
+        clearcoat: 0.32,
+        clearcoatRoughness: 0.24,
+      }),
+      uniform: mat('#526978', {
+        roughness: 0.82,
+        sheen: 0.35,
+        sheenColor: '#9daeb5',
+        sheenRoughness: 0.8,
+      }),
+      skin: mat('#ca9e7d', { roughness: 0.58 }),
       glass: mat('#08141b', { metalness: 0.85, roughness: 0.15 }),
       glow: mat('#edb77d', { emissive: '#f4b968', emissiveIntensity: 3 }),
       red: mat('#e05631', { emissive: '#d42a16', emissiveIntensity: 2 }),
@@ -134,8 +154,8 @@ export const Room = forwardRef(function Chamber(
     function mesh(g, material, parent = scene, p = [0, 0, 0]) {
       const o = new THREE.Mesh(g, material);
       o.position.set(...p);
-      o.castShadow = true;
-      o.receiveShadow = true;
+      o.castShadow = !material.transparent;
+      o.receiveShadow = !material.transparent;
       parent.add(o);
       return o;
     }
@@ -213,33 +233,30 @@ export const Room = forwardRef(function Chamber(
     concrete.repeat.set(4, 4);
     textures.push(concrete);
     m.wall.bumpMap = concrete;
-    m.wall.bumpScale = 0.045;
+    m.wall.bumpScale = 0.013;
     m.floor.bumpMap = concrete;
-    m.floor.bumpScale = 0.012;
+    m.floor.bumpScale = 0.005;
     for (const material of [m.robot, m.steel, m.edge]) {
       material.roughnessMap = concrete;
-      material.roughness = Math.min(1, material.roughness + 0.15);
+      material.roughness = Math.min(1, material.roughness + 0.04);
     }
     box(6.5, 0.3, 7.5, m.floor, scene, [0, -0.16, 0]);
+    const tiles = new THREE.InstancedMesh(
+      new RoundedBoxGeometry(0.992, 0.026, 0.992, 2, 0.01),
+      m.floor,
+      42,
+    );
+    const tileMatrix = new THREE.Matrix4();
+    for (let i = 0; i < 42; i++) {
+      tileMatrix.makeTranslation((i % 6) - 2.5, -0.014, Math.floor(i / 6) - 3);
+      tiles.setMatrixAt(i, tileMatrix);
+      tiles.setColorAt(i, new THREE.Color().setScalar(0.92 + ((i * 17) % 7) * 0.012));
+    }
+    tiles.receiveShadow = true;
+    scene.add(tiles);
     box(0.2, 3.5, 7.5, m.wall, scene, [-3.2, 1.75, 0]);
     box(0.2, 3.5, 7.5, m.wall, scene, [3.2, 1.75, 0]);
-    box(6.5, 0.15, 7.5, m.dark, scene, [0, 3.52, 0]);
-    for (let x = -3; x <= 3; x++)
-      line(
-        [
-          [x, 0.006, -3.6],
-          [x, 0.006, 3.5],
-        ],
-        '#454e50',
-      );
-    for (let z = -3.5; z < 3.6; z++)
-      line(
-        [
-          [-3.1, 0.006, z],
-          [3.1, 0.006, z],
-        ],
-        '#454e50',
-      );
+    box(6.5, 0.15, 7.5, mat('#11191b', { roughness: 1 }), scene, [0, 3.52, 0]);
     // North wall and inset exit, plus the entrance behind the player.
     box(0.65, 3.5, 0.2, m.wall, scene, [-2.9, 1.75, -3.7]);
     box(4.4, 3.5, 0.2, m.wall, scene, [0.95, 1.75, -3.7]);
@@ -302,19 +319,26 @@ export const Room = forwardRef(function Chamber(
       const stripe = box(0.08, 0.009, 0.23, caution, scene, [-0.85 + i * 0.23, 0.016, -0.85]);
       stripe.rotation.y = -0.6;
     }
-    const ambient = new THREE.HemisphereLight('#9dacb9', '#1a201d', 0.65);
+    const ambient = new THREE.HemisphereLight('#b9c5c8', '#352d24', 0.38);
     scene.add(ambient);
-    const key = new THREE.SpotLight('#f2c17f', 80, 12, 0.65, 0.75, 1.5);
-    key.position.set(-0.7, 3.3, 0.2);
+    const key = new THREE.SpotLight('#ffda9c', 64, 12, 0.8, 0.9, 1.5);
+    key.position.set(-1.15, 3.15, -0.25);
     key.target.position.set(0.8, 0.5, -2.1);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.bias = -0.0001;
     key.shadow.normalBias = 0.015;
+    key.shadow.radius = 8;
+    key.shadow.blurSamples = 12;
     scene.add(key, key.target);
-    const rim = new THREE.PointLight('#91bed3', 16, 7, 2);
+    const rim = new THREE.PointLight('#a9c3cf', 9, 7, 2);
     rim.position.set(2.8, 2.8, -2.5);
     scene.add(rim);
+    RectAreaLightUniformsLib.init();
+    const bounce = new THREE.RectAreaLight('#ffe2b3', 3.5, 2.8, 1.8);
+    bounce.position.set(-1.4, 2.2, 0.35);
+    bounce.lookAt(0.6, 0.95, -2.1);
+    scene.add(bounce);
     const exitLight = new THREE.PointLight('#91aa86', 3, 3);
     exitLight.position.set(-1.8, 2.4, -3);
     scene.add(exitLight);
@@ -600,7 +624,23 @@ export const Room = forwardRef(function Chamber(
     pin.rotation.y = Math.PI / 2;
     const glove = model('deploy_spring_glove', [0, 0.12, 0.32]);
     box(0.2, 0.15, 0.29, m.edge, glove, [0, 0.07, 0.11], 0.03);
-    const gloveHead = box(0.28, 0.24, 0.24, mat('#c96542'), glove, [0, 0.12, 0.36], 0.07);
+    const gloveLeather = mat('#cc6238', {
+      roughness: 0.44,
+      clearcoat: 0.16,
+      clearcoatRoughness: 0.4,
+    });
+    function makeGlove(parent, position) {
+      const group = new THREE.Group();
+      parent.add(group);
+      group.position.set(...position);
+      const knuckles = sphere(0.12, gloveLeather, group, [0, 0.005, 0]);
+      knuckles.scale.set(1.12, 0.93, 1);
+      const thumb = sphere(0.055, gloveLeather, group, [-0.08, -0.055, -0.012]);
+      thumb.scale.set(0.95, 1, 1.2);
+      box(0.17, 0.14, 0.075, gloveLeather, group, [0, -0.015, -0.07], 0.025);
+      return group;
+    }
+    const gloveHead = makeGlove(glove, [0, 0.12, 0.36]);
     gloveHead.visible = true;
     const electrical = model('electrify_room', [0, 0.15, 0.17]);
     box(0.2, 0.09, 0.21, m.dark, electrical, [0, 0.1, 0.01], 0.02);
@@ -790,8 +830,11 @@ export const Room = forwardRef(function Chamber(
           if (p?.motion) o.position.copy(p.motion.final);
           groundProjectiles.add(o);
         } else {
-          o.geometry?.dispose();
-          if (o.userData.ownMaterial) o.material?.dispose();
+          o.traverse((part) => {
+            part.geometry?.dispose();
+            if (part.isInstancedMesh) part.dispose();
+            if (part.userData.ownMaterial) part.material?.dispose();
+          });
         }
       }
       particles = [];
@@ -937,22 +980,18 @@ export const Room = forwardRef(function Chamber(
         return;
       }
       if (name === 'deploy_spring_glove') {
-        const glove = box(
-          0.27,
-          0.24,
-          0.24,
-          new THREE.MeshStandardMaterial({ color: '#c96542', roughness: 0.7 }),
-          effects,
-          origin.toArray(),
-          0.07,
-        );
-        glove.userData.ownMaterial = true;
+        const glove = makeGlove(effects, origin.toArray());
         particles.push({ object: glove, origin, end, glove: true, captured: false });
-        const coil = line(
-          Array.from({ length: 80 }, () => origin.toArray()),
-          '#9caaa7',
-          effects,
+        const coil = new THREE.InstancedMesh(
+          new THREE.CylinderGeometry(0.009, 0.009, 1, 6),
+          m.steel,
+          95,
         );
+        coil.frustumCulled = false;
+        coil.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+        effects.add(coil);
+        coil.userData.points = Array.from({ length: 96 }, () => new THREE.Vector3());
+        coil.userData.segment = new THREE.Object3D();
         coil.userData.coil = true;
         return;
       }
@@ -1122,6 +1161,11 @@ export const Room = forwardRef(function Chamber(
       const { width, height } = container.getBoundingClientRect();
       renderer.setSize(width, height);
       composer.setSize(width, height);
+      const aoScale = Math.min(0.65, 900 / Math.max(1, width));
+      occlusion.setSize(
+        Math.max(1, Math.round(width * aoScale)),
+        Math.max(1, Math.round(height * aoScale)),
+      );
       camera.aspect = width / height;
       camera.updateProjectionMatrix();
     };
@@ -1271,10 +1315,16 @@ export const Room = forwardRef(function Chamber(
       humanLeft.arm.position.x = female ? -0.241 : -0.252;
       humanRight.arm.position.x = female ? 0.241 : 0.252;
       for (const braid of details.braids) {
-        braid.group.rotation.x = walking ? Math.sin(gait.phase - 0.4) * 0.035 * gait.weight : 0;
-        braid.group.rotation.z = walking
-          ? Math.sin(gait.phase + braid.side * 0.35) * 0.025 * gait.weight
-          : 0;
+        braid.group.rotation.x = THREE.MathUtils.lerp(
+          braid.group.rotation.x,
+          walking ? Math.sin(gait.phase - 0.7) * 0.075 * gait.weight : 0,
+          damp(0.13),
+        );
+        braid.group.rotation.z = THREE.MathUtils.lerp(
+          braid.group.rotation.z,
+          walking ? Math.sin(gait.phase + braid.side * 0.5) * 0.045 * gait.weight : 0,
+          damp(0.13),
+        );
       }
       const playerShot =
         ev?.kind === 'human' &&
@@ -1324,7 +1374,7 @@ export const Room = forwardRef(function Chamber(
           : walking
             ? gait.rootY
             : 0;
-      humanBody.rotation.z = 0;
+      humanBody.rotation.z = walking ? Math.sin(gait.phase) * 0.018 * gait.weight : 0;
       humanBody.rotation.y = walking ? Math.sin(gait.phase) * 0.024 * gait.weight : 0;
       humanBody.rotation.x = THREE.MathUtils.lerp(
         humanBody.rotation.x,
@@ -1381,7 +1431,13 @@ export const Room = forwardRef(function Chamber(
               : 0);
         else if (humanAction && ['cover_robot', 'uncover_robot'].includes(ev.action))
           reach = -1.55 - Math.sin(t * Math.PI) * 0.6;
-        else if (
+        else if (humanAction && ['break_safe', 'break_exit'].includes(ev.action)) {
+          const windup = THREE.MathUtils.smoothstep(t, 0.04, 0.25);
+          const strike = THREE.MathUtils.smoothstep(t, 0.25, 0.4);
+          const settle = THREE.MathUtils.smoothstep(t, 0.48, 0.88);
+          reach = side === 1 ? 0.2 * windup - 1.3 * strike + 1.1 * settle : -0.48;
+          humanBody.rotation.y = -0.07 * windup + 0.13 * strike - 0.06 * settle;
+        } else if (
           side === -1 &&
           (s.human.flashlightOn ||
             (humanAction && ['show_pass', 'show_work_order', 'play_recording'].includes(ev.action)))
@@ -1416,7 +1472,7 @@ export const Room = forwardRef(function Chamber(
           : side === 1 && playerAiming
             ? -0.1
             : walking
-              ? 0.1 + Math.max(0, -reach) * 0.4
+              ? -0.16 - Math.max(0, -reach) * 0.3
               : reach < -0.2
                 ? -0.5
                 : 0;
@@ -1476,6 +1532,11 @@ export const Room = forwardRef(function Chamber(
         : speakingActor === 'human'
           ? Math.sin(time * 0.009) * 0.035
           : 0;
+      humanHead.rotation.y = THREE.MathUtils.lerp(
+        humanHead.rotation.y,
+        walking ? -humanBody.rotation.y * 0.65 : 0,
+        damp(0.12),
+      );
       details.mouth.scale.y =
         speakingActor === 'human' && !humanDead ? 1 + Math.abs(Math.sin(time * 0.022)) * 1.7 : 1;
       if (humanDead) {
@@ -1610,6 +1671,28 @@ export const Room = forwardRef(function Chamber(
           : 0,
         0.04,
       );
+      // Small character beats follow the selected action, never select one for the AI.
+      const gloveAction = ev?.kind === 'robot' && ev.valid && ev.action === 'deploy_spring_glove';
+      const gloveWindup = gloveAction && t < 0.26 ? Math.sin((t / 0.26) * Math.PI) : 0;
+      head.rotation.z = THREE.MathUtils.lerp(
+        head.rotation.z,
+        robotDead
+          ? 0.13
+          : removingCover
+            ? Math.sin(t * Math.PI * 3) * 0.06
+            : gloveWindup * -0.12 +
+              (thinking ? -0.055 : speakingActor === 'robot' ? Math.sin(time * 0.0028) * 0.045 : 0),
+        damp(0.1),
+      );
+      head.rotation.x = THREE.MathUtils.lerp(
+        head.rotation.x,
+        robotDead
+          ? 0.18
+          : gloveWindup * -0.1 + (speakingActor === 'robot' ? Math.sin(time * 0.006) * 0.025 : 0),
+        damp(0.13),
+      );
+      if (gloveAction && t > 0.04) cue('spring-wind');
+      if (gloveAction && t > 0.5) cue('spring-return');
       body.updateWorldMatrix(true, false);
       const attack = ev?.kind === 'robot' && ev.valid && equipmentModels[ev.action] && t < 0.94;
       const activeName = attack ? ev.action : s.robot.ready;
@@ -1766,9 +1849,9 @@ export const Room = forwardRef(function Chamber(
         blackout = lighting.intensity === 0,
         normal = lighting.color === '#fff3df',
         color = new THREE.Color(lighting.color);
-      key.color.lerp(normal ? new THREE.Color('#f2c17f') : color, 0.05);
-      key.intensity = THREE.MathUtils.lerp(key.intensity, 80 * lighting.intensity, 0.05);
-      ambient.color.lerp(normal ? new THREE.Color('#9dacb9') : color, 0.05);
+      key.color.lerp(normal ? new THREE.Color('#ffda9c') : color, 0.05);
+      key.intensity = THREE.MathUtils.lerp(key.intensity, 64 * lighting.intensity, 0.05);
+      ambient.color.lerp(normal ? new THREE.Color('#b9c5c8') : color, 0.05);
       warning.color.copy(color);
       warning.intensity = THREE.MathUtils.lerp(
         warning.intensity,
@@ -1777,10 +1860,12 @@ export const Room = forwardRef(function Chamber(
       );
       warmStrip.emissive.lerp(normal ? new THREE.Color('#eabf7f') : color, 0.05);
       const power = blackout ? 0 : lighting.intensity;
-      rim.intensity = 16 * power;
+      rim.intensity = 9 * power;
+      bounce.intensity = 3.5 * power;
+      bounce.color.copy(normal ? new THREE.Color('#ffe2b3') : color);
       exitLight.intensity = 3 * power;
       scene.environmentIntensity = 0.32 * power;
-      ambient.intensity = 0.65 * power;
+      ambient.intensity = 0.38 * power;
       coolStrip.emissiveIntensity = 1.8 * power;
       warmStrip.emissiveIntensity = 2.4 * power;
       m.glow.emissiveIntensity = 3 * power;
@@ -2019,16 +2104,45 @@ export const Room = forwardRef(function Chamber(
           const p = particles.find((p) => p.glove);
           o.visible = t > 0.26 && t < 0.8;
           if (p) {
-            const points = [];
+            const points = o.userData.points;
             const d = p.object.position.clone().sub(muzzleWorld),
-              side = new THREE.Vector3(0, 1, 0);
-            for (let i = 0; i < 80; i++) {
-              const v = muzzleWorld.clone().addScaledVector(d, i / 79);
-              v.addScaledVector(side, Math.sin(i) * 0.055);
-              v.x += Math.cos(i) * 0.04;
-              points.push(v);
+              axis = d.clone().normalize();
+            const side = new THREE.Vector3(
+              Math.abs(axis.y) > 0.9 ? 1 : 0,
+              Math.abs(axis.y) > 0.9 ? 0 : 1,
+              0,
+            )
+              .cross(axis)
+              .normalize();
+            const up = axis.clone().cross(side);
+            for (let i = 0; i < points.length; i++) {
+              const u = i / (points.length - 1),
+                phase = u * Math.PI * 20;
+              const radius = 0.047 * Math.min(1, u * 8, (1 - u) * 8) + 0.009;
+              const v = points[i].copy(muzzleWorld).addScaledVector(d, u);
+              v.addScaledVector(side, Math.cos(phase) * radius).addScaledVector(
+                up,
+                Math.sin(phase) * radius,
+              );
+              if (i) {
+                const segment = o.userData.segment;
+                segment.position
+                  .copy(points[i - 1])
+                  .add(v)
+                  .multiplyScalar(0.5);
+                segment.quaternion.setFromUnitVectors(
+                  new THREE.Vector3(0, 1, 0),
+                  v
+                    .clone()
+                    .sub(points[i - 1])
+                    .normalize(),
+                );
+                segment.scale.set(1, v.distanceTo(points[i - 1]), 1);
+                segment.updateMatrix();
+                o.setMatrixAt(i - 1, segment.matrix);
+              }
             }
-            updateLine(o, points);
+            o.instanceMatrix.needsUpdate = true;
           }
         }
         if (o.userData.blast) {
@@ -2175,14 +2289,14 @@ export const Room = forwardRef(function Chamber(
         0.78,
         ev?.action === 'electrify_room' ? 1 : 0.5,
       );
-      bloom.strength = 0.35 + impact * (explosion ? 0.55 : 0.08);
+      bloom.strength = 0.26 + impact * (explosion ? 0.55 : 0.08);
       const framing = human.visible ? Math.max(0, Math.min(1, (human.position.z + 0.8) / 3.4)) : 0;
       if (world.current.angle === 0) {
-        camTarget.set(-0.35, 3.05, 3.35 + framing * 2.35);
-        look.lerp(new THREE.Vector3(0.3, 0.8, -1.5), 0.05);
+        camTarget.set(-0.55, 2.45, 3.65 + framing * 2.6);
+        look.lerp(new THREE.Vector3(0.3, 0.94, -1.5), damp(0.05));
       } else {
-        camTarget.set(2.65, 2.7, 2.8 + framing * 2.8);
-        look.lerp(new THREE.Vector3(-0.35, 0.85, -1.0), 0.05);
+        camTarget.set(2.65, 2.5, 3.65 + framing * 2.6);
+        look.lerp(new THREE.Vector3(-0.35, 0.94, -1.0), damp(0.05));
       }
       southWall.visible = camera.position.z < 3.48;
       const exitLocked = Boolean(s.room.exitDoor?.locked),
@@ -2228,6 +2342,7 @@ export const Room = forwardRef(function Chamber(
       env.dispose();
       impactParticles.dispose();
       bloom.dispose();
+      occlusion.dispose();
       post.dispose();
       composer.dispose();
       renderer.dispose();

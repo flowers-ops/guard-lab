@@ -1,3 +1,12 @@
+# 1.0.4
+
+- Warm area lighting, softened shadows, bounded contact shadows, cream enamel and cloth sheen bring more depth to the room. Beveled floor tiles share one instanced draw. The third-person camera uses a lower viewpoint and a narrower lens.
+- The uniform has a smoother silhouette and the high pigtails use three overlapping braid strands with damped follow-through. Walking includes counter-rotation and relaxed elbows. Safe/door strikes have anticipation, impact and recovery.
+- The spring glove has a rounded leather shape, an instanced metal coil, bounded rebound and synchronized wind-up/retraction sounds. Robot head tilts add expression to its chosen actions. Sound effects have a limiter for stacked impacts.
+- Transparent signs, sprites and effects are excluded from contact-shadow depth and do not cast solid shadow rectangles. Transient effect groups dispose their nested geometry and instance buffers.
+
+These changes affect presentation only. The turn engine, guard prompt, tools and private sensors retain the experiment's existing rules. Renderer checks cover both appearances, movement, glove clearance, open-safe persistence, lights, blackout, the sack, projectiles, taser and explosions.
+
 # 1.0.3
 
 - Live Codex uses compact exchanges that return immediately when the next turn arrives, short validated reply IDs and uninterrupted background rendering. An uninterrupted six-turn benchmark reduced median reaction after startup from 10.08 to 3.98 seconds with the same model/reasoning setting. See [measurements and limits](LATENCY.md).

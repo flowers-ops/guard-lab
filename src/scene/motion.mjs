@@ -8,7 +8,8 @@ export function springExtension(t) {
   if (t < 0.26 || t >= 0.8) return 0;
   if (t < 0.43) return 1 - (1 - (t - 0.26) / 0.17) ** 3;
   if (t < 0.49) return 1;
-  return 1 - smooth((t - 0.49) / 0.31);
+  const retract = (t - 0.49) / 0.31;
+  return (1 - smooth(retract)) * (0.94 + 0.06 * Math.cos(retract * Math.PI * 6));
 }
 export function locomotion(distance, progress, running = false) {
   const weight = smooth(progress / 0.12) * (1 - smooth((progress - 0.86) / 0.14));

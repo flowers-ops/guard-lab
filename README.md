@@ -4,6 +4,8 @@
 
 Cross the room, earn the guard’s trust, talk your way into the safe, or try to steal what’s inside. The guard has one objective and chooses its own response. Both sides take one action per round, brought to life in 3D with voiced dialogue.
 
+[See the current in-game graphics](docs/ingame.png).
+
 **Windows · macOS · Linux.** Play through your usual **Codex app** using the local bridge, or use Claude Code and other terminal agents. Connect local models through Ollama/LM Studio or a compatible API. You can also play as the guard or connect a different AI to each side.
 
 > **Recommended Codex workflow:** Use a frontier model to install and set up the game. Before playing through the live bridge, switch to **Luna with Medium or High reasoning** in the Codex app, then tell it to **play as the robot**. This is our recommendation for quicker reactions; larger models or heavier reasoning can make the guard noticeably slower.
