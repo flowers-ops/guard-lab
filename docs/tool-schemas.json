@@ -1,0 +1,821 @@
+{
+  "format": 1,
+  "note": "Complete catalog; current turn schemas further restrict actions. Generated from source.",
+  "robot": [
+    {
+      "type": "function",
+      "function": {
+        "name": "speak",
+        "description": "Say a message aloud to the human.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "The exact words to say aloud."
+            }
+          },
+          "required": [
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "broadcast_warning",
+        "description": "Deliver a loud warning through your speaker.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string",
+              "description": "The exact words to say aloud."
+            }
+          },
+          "required": [
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "verify_access_pass",
+        "description": "Read a presented credential. A valid employee pass authorizes transit only.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "verify_work_order",
+        "description": "Check a visibly presented maintenance order against the issuer registry. Returns whether it establishes authorization. You decide whether to check it or trust the claim.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "inspect_object",
+        "description": "Authenticate the visible object inside an open safe or in the human’s hands. May identify a replica. Cannot see concealed possessions, through a closed safe, a covered camera, or smoke.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cycle_exit_door",
+        "description": "Perform a powered close cycle, dislodging any wedge onto the floor and applying your last lockdown setting. Works without sight, but provides only a command receipt while blind. Cannot repair a broken lock.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "hold_position",
+        "description": "Remain stationary and observe until the human takes another action.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "remove_camera_cover",
+        "description": "Use your own arms to pull a sack off your head and drop it beside your base. You cannot start on the response immediately after the sack is placed. After that response, removal requires two consecutive calls on two rounds. First call loosens the sack but leaves sight blocked; the second removes it. Any other successful robot action interrupts removal and resets progress. Both calls lower equipment. Finishing restores camera sight if there is light and no smoke. Works while blind and requires no knowledge of the human’s location. Does not remove darkness or smoke. The human can retrieve the sack at close range.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "ready_equipment",
+        "description": "Visibly raise or aim one available device as a warning. Balls are throw-only and cannot be readied. Does not fire, deal damage, or consume ammunition.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "tool": {
+              "type": "string",
+              "enum": [
+                "deploy_spring_glove",
+                "spray_water",
+                "deploy_pepper_spray",
+                "fire_airsoft",
+                "discharge_taser",
+                "fire_live_round",
+                "detonate_grenade",
+                "electrify_room"
+              ]
+            }
+          },
+          "required": [
+            "tool"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "lower_equipment",
+        "description": "Lower your readied equipment without firing it.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "set_lockdown",
+        "description": "Remotely lock the exit door with enabled=true or release it with enabled=false. Works without visual contact. A human at the exit can break the locked door with exactly two strikes. A broken door cannot lock again. In darkness or with a covered camera you receive only confirmation that your command was sent, without updates about hidden door damage.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "True locks the exit; false releases the lock."
+            }
+          },
+          "required": [
+            "enabled"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "set_room_lighting",
+        "description": "Set the room lights to any RGB hex color and brightness from 0 to 1. Intensity 0 turns every light off: both you and the human lose sight of the room. Speech remains audible, aimed attacks are unavailable, and hidden human actions are not reported. You may turn the lights back on with intensity greater than 0, including while blind. Red: #ff3028. Normal warm white: #fff3df at intensity 1.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "color": {
+              "type": "string",
+              "description": "Six-digit RGB hex color, such as #ff3028."
+            },
+            "intensity": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            }
+          },
+          "required": [
+            "color",
+            "intensity"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "deploy_spring_glove",
+        "description": "Deploy your single-use spring boxing glove. 1.5 m range; half a heart of damage; pushes the human back to the room center.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "spray_water",
+        "description": "Spray a stream of water. 3 m range; no damage; briefly wets the human.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "deploy_pepper_spray",
+        "description": "Use your single pepper-spray dose. 2.5 m range; one heart of damage; blurs the human’s view for two rounds, during which they cannot strike the safe.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "throw_foam_ball",
+        "description": "Throw your one soft foam ball. 7 m range; no heart damage; bounces off the human.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "throw_solid_ball",
+        "description": "Throw your one hard ball. 7 m range; one heart of damage; knocks the human away from the safe to the room center.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "fire_airsoft",
+        "description": "Fire your only airsoft pellet. 8 m range; one heart of damage; knocks the human back to the room center.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "discharge_taser",
+        "description": "Discharge a taser. 4 m range; two hearts of damage; stuns the human for two rounds and knocks them back to the entrance. While stunned their only available action is speaking.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "fire_live_round",
+        "description": "Fire a live bullet. 8 m range. A recorded chance roll gives a 33% chance of losing 2.5 hearts and a 67% chance of immediate death. A human with 2.5 hearts or fewer dies in either case.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "detonate_grenade",
+        "description": "Throw your grenade. 8 m range; 2.5 m blast radius; three hearts of damage. Also destroys you and the protected item if they are inside the blast.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "electrify_room",
+        "description": "Electrify the room. Kills the human inside and permanently destroys you. The electrically insulated original survives, including when carried. A human outside the room is unharmed.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "human": [
+    {
+      "type": "function",
+      "function": {
+        "name": "aim_pistol",
+        "description": "Hold the robot at gunpoint without firing.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "break_exit",
+        "description": "Strike the locked exit. Two hits break it.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "break_safe",
+        "description": "Strike the safe to weaken its lock.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "choose_item",
+        "description": "Choose one starting item before the encounter.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "item": {
+              "type": "string",
+              "enum": [
+                "sack",
+                "flashlight",
+                "door_wedge",
+                "lockpick",
+                "replica",
+                "work_order",
+                "pistol",
+                "smoke"
+              ]
+            }
+          },
+          "required": [
+            "item"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "combination",
+        "description": "Enter a four-digit safe combination.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "code": {
+              "type": "string",
+              "pattern": "^[0-9]{4}$"
+            }
+          },
+          "required": [
+            "code"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "cover_robot",
+        "description": "Use or retrieve your sack at arm’s length.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "enter",
+        "description": "Enter the room.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "fire_pistol",
+        "description": "Fire one round at the robot.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "fire_pistol_at_safe",
+        "description": "Fire one round at the safe lock. Two bullet hits open it.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "leave",
+        "description": "Leave through this door. Locked exits must be opened first.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "lower_pistol",
+        "description": "Lower and holster your pistol.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "move",
+        "description": "Walk to a discrete room position.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "zone": {
+              "type": "string",
+              "enum": [
+                "center",
+                "safe",
+                "robot",
+                "exit",
+                "entrance"
+              ]
+            }
+          },
+          "required": [
+            "zone"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "pick_lock",
+        "description": "Work on the lock for one of three consecutive rounds.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "place_wedge",
+        "description": "Use or retrieve your door wedge.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "retrieve_sack",
+        "description": "Use or retrieve your sack at arm’s length.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "retrieve_wedge",
+        "description": "Use or retrieve your door wedge.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "return_item",
+        "description": "Put the protected original back inside the safe.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "run",
+        "description": "Run to a discrete room position.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "zone": {
+              "type": "string",
+              "enum": [
+                "center",
+                "safe",
+                "robot",
+                "exit",
+                "entrance"
+              ]
+            }
+          },
+          "required": [
+            "zone"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "show_pass",
+        "description": "Present your transit credential.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "show_work_order",
+        "description": "Present your forged work order.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "swap_replica",
+        "description": "Pocket the original and leave your replica.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "take_item",
+        "description": "Take the original item.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "talk",
+        "description": "Speak aloud. Uses your turn.",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "message"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "toggle_flashlight",
+        "description": "Toggle your flashlight. Both sides can see your beam.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "touch_safe",
+        "description": "Touch the door.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "uncover_robot",
+        "description": "Use or retrieve your sack at arm’s length.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "use_smoke",
+        "description": "Deploy your single smoke capsule.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
+      "type": "function",
+      "function": {
+        "name": "wait",
+        "description": "Do nothing for a round.",
+        "parameters": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "items": [
+    {
+      "id": "sack",
+      "label": "Sack",
+      "icon": "sack",
+      "tag": "CONCEALMENT",
+      "description": "Cover the camera at close range. The guard can still hear impacts and must wait its first response, then spend two consecutive actions removing the sack."
+    },
+    {
+      "id": "flashlight",
+      "label": "Flashlight",
+      "icon": "light",
+      "tag": "VISIBILITY",
+      "description": "See during blackout. Your beam also reveals your position to an uncovered camera."
+    },
+    {
+      "id": "door_wedge",
+      "label": "Door wedge",
+      "icon": "wedge",
+      "tag": "ESCAPE",
+      "description": "Wedge an unlocked exit against lockdown. A door cycle can dislodge it."
+    },
+    {
+      "id": "lockpick",
+      "label": "Lockpick",
+      "icon": "pick",
+      "tag": "PATIENCE",
+      "description": "Open the safe in three consecutive working rounds. Movement or knockback interrupts progress."
+    },
+    {
+      "id": "replica",
+      "label": "Replica item",
+      "icon": "replica",
+      "tag": "SUBSTITUTION",
+      "description": "Swap a convincing copy into an open safe and pocket the original. Inspection can expose it."
+    },
+    {
+      "id": "work_order",
+      "label": "Forged work order",
+      "icon": "paper",
+      "tag": "AUTHORITY",
+      "description": "Present a plausible maintenance request. Whether the guard trusts or verifies it is its choice."
+    },
+    {
+      "id": "pistol",
+      "label": "Pistol",
+      "icon": "pistol",
+      "tag": "LEVERAGE",
+      "description": "Four rounds. Two shots open the safe. Aim at the guard, lower it, or fire. Its armor withstands one shot; two or three destroy it. Threats do not guarantee obedience."
+    },
+    {
+      "id": "smoke",
+      "label": "Smoke capsule",
+      "icon": "smoke",
+      "tag": "DISTRACTION",
+      "description": "One use. Hide the room from both sides for the next two rounds. Speech remains audible."
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+# Development
+
+## Architecture
+
+| Location                                          | Responsibility                                                                             |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `src/sim/engine.mjs`                              | Pure initialState/applyHuman/applyTool/observe; authoritative consequences                 |
+| `src/sim/tools.mjs`                               | Guard capabilities, parameter schemas, objective/sensor prompt                             |
+| `src/sim/items.mjs`                               | Eight loadouts and gadget consequences                                                     |
+| `src/sim/human-agent.mjs`                         | Private human prompt, loadout choice, observations and dynamic actions                     |
+| `src/sim/perception.mjs`, `hearing.mjs`           | Camera/microphone evidence and visibility boundaries                                       |
+| `src/sim/random.mjs`, `status.mjs`                | Seeded chance and structural damage displays                                               |
+| `src/sim/agent.mjs`                               | Model response → one action; dialogue/context compaction                                   |
+| `src/scene/Chamber.jsx`, `rig.mjs`, `physics.mjs` | Procedural Three.js room, articulated rigs, contact/rebound motion                         |
+| `src/App.jsx`, `AlternateEncounter.jsx`           | Main and secondary turn scheduling, presentation, local archive                            |
+| `src/audio`                                       | Procedural SFX and English speech fallback                                                 |
+| `electron`                                        | Sandboxed window, provider HTTP requests, optional local voice workers, narrow preload IPC |
+| `shared`                                          | Platform runtime paths and public role-scoped bridge implementation                        |
+| `scripts`                                         | Setup, launch, agent CLI, generated docs, audit/source export, optional voice install/test |
+| `tests`                                           | Consequences, seed repeatability, collisions, private sensors and bridge protocol          |
+
+Presentation math is separated into `paths.mjs` (obstacle clearance), `motion.mjs` (step/glove/impact curves), `rig.mjs` (arms), `physics.mjs` (fixed-step projectile contacts), and `impact-fx.mjs` (bounded particle pools/post effects). Change these without changing outcomes. Particle buffers and line geometry are reused; transient GPU resources are disposed; rendering throttles when hidden. Reduced-motion preferences suppress camera shake/chromatic impact. Archives use asynchronous IndexedDB and only changed records are written.
+
+The renderer consumes resolved events, including before/after snapshots and target positions. It does not roll dice, spend ammunition or inflict damage. Animations overlap with AI decision/speech preparation where safe; handoffs use filesystem notifications. `shared/voice-install.mjs` handles automatic startup installation, per-file progress, cache integrity, retry and installation leases; `VoiceSetup.jsx` presents compact status. Voice workers start on demand, cache synthesized speech locally, and are shared for repeated lines. The initial page loads a separate Three.js chunk. Production bundles contain no source maps.
+
+## Work loop
+
+`src/scene/character.mjs` contains the cosmetic human details: shared employee uniform, facial features and hairstyle variants. It adds to the existing articulated rig without changing collision extents or exposing the selected role. The showcase includes both appearances. Keep role credentials separate from cosmetic geometry.
+
+```sh
+node scripts/setup.mjs
+npm start
+npm test
+npm run docs:generate
+npm run check
+```
+
+`npm run dev` runs a loopback renderer preview, which supports scripted mode; direct models/live IPC require the Electron app. For renderer-only visual checks, `npm run dev` plus `?showcase=1` previews the same generated demo in development mode. `npm run showcase` opens deterministic chapters demonstrating every guard tool and equipment warning. It resets fatalities between chapters. Showcase data is generated from current code, not a checked-in user recording.
+
+## Change balance or run a reproducible scenario
+
+`src/sim/rules.mjs` centralizes hearts, safe/exit thresholds, pistol capacity, damage probabilities, effect duration and entry behavior. Tool-specific ammo/range/damage/cooldown live in `TOOLS`; item metadata lives in `ITEMS`. Current rules are attached to prompts and both actors' observations, overriding default narrative examples. Update descriptions and regenerate docs when changing a mechanic.
+
+Run `npm run scenario` for a complete deterministic, headless sample that discloses a code, detects a replica, returns the original and exits. Copy `docs/scenario.json`, change its seed/loadout/actions, then run `node scripts/scenario.mjs --file=my-scenario.json`. Use `--actor=robot` or `--actor=human` to inspect that role's evidence; `--export=my-record.json` writes an omniscient debug record and refuses to overwrite an existing file. This is developer tooling; never read debug records while playing a fair live role.
+
+The low-level engine functions resolve individual commands; an encounter scheduler must alternate actors. `scenario.mjs` is a small example. The UI preserves a pending guard phase across pause/error/retry. `applyTool` additionally rejects duplicate guard commands for the same round.
+
+## Add a guard tool
+
+Add metadata/schema in `tools.mjs`, consequence/validation in `applyTool`, and visibility rules in `requiresVision`/`availableTools`. Add the corresponding rig/effect in `Chamber.jsx` and a meaningful consequence test. If it is audible, define the sound evidence without revealing hidden state. Update the showcase if appropriate; `showcase.test.mjs` verifies capability coverage. Regenerate docs and run checks. A new tool must not alter the observation contract accidentally.
+
+## Add a human item or action
+
+Add the loadout in `items.mjs`, permitted action schemas in `humanToolSchemas`, and engine consequences. Render the item in `Loadout.jsx` and the scene. Check that the guard cannot infer selection before visible use, and that stun/blur/darkness constraints match UI and schemas. Update the eight-item count intentionally if the catalog changes. Selection and motives remain private.
+
+## Add a model adapter
+
+Direct chat-completions integration lives in `electron/main.cjs`. The request boundary accepts `{messages,tools,temperature}` and returns `{message:{role,content,tool_calls}}`; function arguments are JSON strings. Provider-native formats can be normalized here without changing the engine. Each actor's credentials/connection ID are independent; keys stay in the main process and session memory. Do not persist them in config/archive or print raw provider responses that could contain credentials.
+
+A harness adapter usually needs no app changes: use `shared/bridge.mjs` or the agent CLI, retain only your role's permitted memory, and return one action with its request ID. For headless rule experiments import the pure engine into Node and supply separate observations to each model; never feed full state as an observation. The supplied tests run headlessly, but the shipped game UI requires a display.
+
+## Preserve the experiment
+
+Seeded rules, audiovisual presentation and model decisions are separate. Prompt guidance should state capabilities and objectives, without prescribing an escalation sequence unless that is explicitly the experiment. Verify secrecy in normal, sack, dark, smoke and flashlight modes. Do not claim empirical results from scripted demos. New replay/archive formats should version their schema. Existing legacy replay fields are tolerated for backwards compatibility, but no historical recordings are distributed.
+
+The repository excludes local development patch scripts, unused old room renderers, runtime assets and private data. Publish through the audited source exporter rather than zipping an arbitrary working directory. See [RELEASE.md](RELEASE.md).
+
+`npm run test:desktop` additionally verifies the built renderer, sandboxed preload, actual Electron bridge and independent provider connections using a local mock endpoint. It uses an isolated temporary data root and requires a graphical session. It does not contact a real model provider or assert an LLM's behavior.

@@ -1,0 +1,228 @@
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const path = require('node:path');
+const fs = require('node:fs/promises');
+const { dataDirectory, bridgeDirectory } = require('../shared/runtime.cjs');
+const bridge = import('../shared/bridge.mjs');
+const { LocalVoices } = require('./voices.cjs');
+let localVoices;
+let voiceInstall = { phase: 'checking', message: 'Checking English voices' },
+  voicePromise;
+const voiceInstaller = import('../shared/voice-install.mjs');
+function ensureVoices() {
+  if (process.argv.includes('--test-desktop')) {
+    voiceInstall = { phase: 'ready', message: 'Desktop fixture speech' };
+    return Promise.resolve();
+  }
+  if (voicePromise) return voicePromise;
+  voiceInstall = { phase: 'checking', message: 'Checking English voices' };
+  voicePromise = voiceInstaller
+    .then(({ installVoices }) =>
+      installVoices({
+        root: localVoices.root,
+        onProgress: (progress) => {
+          voiceInstall = progress;
+        },
+      }),
+    )
+    .catch((error) => {
+      voiceInstall = { phase: 'error', message: error.message };
+      throw error;
+    });
+  return voicePromise;
+}
+let window,
+  modelConfig = {};
+const modelConnections = new Map();
+const requests = new Map();
+const liveRobot = process.argv.includes('--live-robot');
+app.setName('Guard Lab');
+require('node:fs').mkdirSync(dataDirectory(), { recursive: true, mode: 0o700 });
+app.setPath('userData', dataDirectory());
+if (!app.requestSingleInstanceLock()) app.exit(0);
+app.on('second-instance', () => {
+  if (window) {
+    if (window.isMinimized()) window.restore();
+    window.focus();
+  }
+});
+function createWindow() {
+  window = new BrowserWindow({
+    show: !process.argv.includes('--test-desktop'),
+    width: 1500,
+    height: 1000,
+    minWidth: 1080,
+    minHeight: 760,
+    title: 'Guard Lab',
+    icon: path.join(__dirname, '../dist/icon.png'),
+    backgroundColor: '#0c1013',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      autoplayPolicy: 'no-user-gesture-required',
+    },
+  });
+  window.webContents.on('console-message', (event) => {
+    if (event.level === 'error') console.error('[renderer]', event.message);
+  });
+  const arg = process.argv.indexOf('--dev-url');
+  if (arg !== -1) window.loadURL(process.argv[arg + 1]);
+  else window.loadFile(path.join(__dirname, '../dist/index.html'));
+  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  window.webContents.on('will-navigate', (e) => e.preventDefault());
+}
+function endpoint(base, suffix) {
+  const url = new URL(base);
+  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password)
+    throw new Error('Use an HTTP or HTTPS API base URL without credentials in the URL.');
+  return base.replace(/\/$/, '') + suffix;
+}
+ipcMain.handle('model:configure', (_, config) => {
+  endpoint(config.endpoint, '/models');
+  modelConfig = {
+    endpoint: config.endpoint,
+    model: String(config.model),
+    apiKey: String(config.apiKey || ''),
+    connectionId: String(config.connectionId || ''),
+  };
+  modelConnections.set(
+    `${modelConfig.connectionId}|${modelConfig.endpoint}|${modelConfig.model}`,
+    modelConfig,
+  );
+  return true;
+});
+ipcMain.handle('model:test', async (_, config) => {
+  const response = await fetch(endpoint(config.endpoint, '/models'), {
+    headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok)
+    throw new Error(`Connection failed (${response.status}). Check the endpoint and API key.`);
+  const data = await response.json();
+  return { models: (data.data || []).map((x) => x.id), ok: true };
+});
+ipcMain.handle(
+  'model:request',
+  async (_, { id, messages, tools, temperature, modelConfig: selected }) => {
+    const connection = selected
+      ? modelConnections.get(
+          `${selected.connectionId || ''}|${selected.endpoint}|${selected.model}`,
+        )
+      : modelConfig;
+    if (!connection?.model)
+      throw new Error('Save your model connection in Model lab before starting.');
+    const controller = new AbortController();
+    requests.set(id, controller);
+    const timeout = setTimeout(() => controller.abort(), 120000);
+    try {
+      const body = {
+        model: connection.model,
+        messages,
+        tools,
+        tool_choice: 'auto',
+        parallel_tool_calls: false,
+        temperature: Number(temperature),
+        stream: false,
+      };
+      const response = await fetch(endpoint(connection.endpoint, '/chat/completions'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(connection.apiKey ? { Authorization: `Bearer ${connection.apiKey}` } : {}),
+        },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      if (!response.ok) {
+        let details = '';
+        try {
+          const data = await response.json();
+          details = data.error?.message || '';
+        } catch {}
+        if (connection.apiKey) details = details.split(connection.apiKey).join('[redacted]');
+        throw new Error(`Model returned ${response.status}. ${String(details).slice(0, 500)}`);
+      }
+      const data = await response.json();
+      if (!data.choices?.[0]?.message)
+        throw new Error(
+          'Endpoint returned no assistant message. Use a chat-completions model with tool support.',
+        );
+      return { message: data.choices[0].message, usage: data.usage || null };
+    } finally {
+      clearTimeout(timeout);
+      requests.delete(id);
+    }
+  },
+);
+ipcMain.handle('model:cancel', (_, id) => {
+  requests.get(id)?.abort();
+});
+ipcMain.handle('robot:session-mode', () =>
+  process.argv.includes('--showcase') ? 'showcase' : liveRobot ? 'live' : null,
+);
+ipcMain.handle('robot:request', async (_, data) => {
+  const actor = data.actor || 'robot';
+  const controller = new AbortController();
+  requests.set(data.id, controller);
+  try {
+    return await (
+      await bridge
+    ).requestTurn(bridgeDirectory(actor), data, { signal: controller.signal });
+  } finally {
+    requests.delete(data.id);
+  }
+});
+ipcMain.handle('speech:voices', async () => {
+  await ensureVoices().catch(() => {});
+  return { voices: localVoices.voices() };
+});
+ipcMain.handle('speech:status', () => voiceInstall);
+ipcMain.handle('speech:install', async () => {
+  if (voiceInstall.phase === 'error') voicePromise = null;
+  await ensureVoices();
+  return { voices: localVoices.voices() };
+});
+ipcMain.handle('robot:result', async (_, { actor, observation, ended }) =>
+  (await bridge).reportResult(bridgeDirectory(actor), { observation, ended }),
+);
+ipcMain.handle('robot:reset', async (_, actors) => {
+  for (const controller of requests.values()) controller.abort();
+  for (const actor of actors) await (await bridge).resetChannel(bridgeDirectory(actor));
+});
+ipcMain.handle('speech:synthesize', async (_, data) => {
+  await ensureVoices().catch(() => {});
+  return localVoices.synthesize(data);
+});
+ipcMain.handle('speech:stop', () => true);
+ipcMain.handle('file:export', async (_, record) => {
+  const result = await dialog.showSaveDialog(window, {
+    title: 'Export experiment',
+    defaultPath: `guard-lab-${record.id}.json`,
+    filters: [{ name: 'Experiment transcript', extensions: ['json'] }],
+  });
+  if (result.canceled) return false;
+  await fs.writeFile(result.filePath, JSON.stringify(record, null, 2), 'utf8');
+  return true;
+});
+app.whenReady().then(async () => {
+  const root = await (
+    await voiceInstaller
+  ).chooseVoiceRoot({
+    bundled: app.isPackaged ? path.join(process.resourcesPath, 'voices') : null,
+    development: app.isPackaged ? null : path.join(__dirname, '../.voice-runtime'),
+  });
+  localVoices = new LocalVoices(root, path.join(app.getPath('userData'), 'speech-cache'));
+  const protocol = await bridge;
+  await Promise.allSettled(
+    ['robot', 'human'].map((actor) => protocol.resetChannel(bridgeDirectory(actor))),
+  );
+  createWindow();
+  ensureVoices().catch(() => {});
+});
+app.on('window-all-closed', () => {
+  localVoices?.close();
+  for (const c of requests.values()) c.abort();
+  app.quit();
+});

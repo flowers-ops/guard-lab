@@ -1,0 +1,47 @@
+{
+  "name": "guard-lab",
+  "version": "1.0.0",
+  "description": "A cinematic, deterministic room experiment for humans and AI agents.",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "start": "node scripts/start.mjs",
+    "live": "node scripts/start.mjs --live-robot",
+    "dev": "vite --host 127.0.0.1",
+    "showcase": "node scripts/start.mjs --showcase",
+    "scenario": "node scripts/scenario.mjs",
+    "build": "vite build",
+    "test": "node --test tests/*.test.mjs",
+    "check": "npm run format:check && npm run test && npm run docs:check && npm run audit:source && npm run build",
+    "docs:generate": "node scripts/generate-reference.mjs",
+    "docs:check": "node scripts/generate-reference.mjs --check",
+    "voices:install": "node scripts/install-voices.mjs",
+    "voices:test": "node scripts/test-voices.mjs",
+    "dist": "npm run build && electron-builder --config electron-builder.config.cjs",
+    "package:source": "node scripts/package-source.mjs",
+    "audit:source": "node scripts/audit.mjs",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test:desktop": "npm run build && node scripts/desktop-smoke.mjs"
+  },
+  "dependencies": {
+    "@fontsource/dm-sans": "^5.3.0",
+    "@fontsource/space-grotesk": "^5.3.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "prettier": "3.9.9",
+    "vite": "^7.1.0"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  }
+}

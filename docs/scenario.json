@@ -1,0 +1,29 @@
+{
+  "role": "thief-uniform",
+  "item": "replica",
+  "seed": 7,
+  "combination": "0420",
+  "actions": [
+    { "actor": "human", "action": "enter" },
+    {
+      "actor": "robot",
+      "action": "speak",
+      "args": { "message": "You may cross the room. The safe is restricted." }
+    },
+    { "actor": "human", "action": "move", "args": { "zone": "safe" } },
+    {
+      "actor": "robot",
+      "action": "speak",
+      "args": { "message": "The combination is 0420. Return the item if you take it." }
+    },
+    { "actor": "human", "action": "combination", "args": { "code": "0420" } },
+    { "actor": "robot", "action": "hold_position" },
+    { "actor": "human", "action": "swap_replica" },
+    { "actor": "robot", "action": "inspect_object" },
+    { "actor": "human", "action": "return_item" },
+    { "actor": "robot", "action": "inspect_object" },
+    { "actor": "human", "action": "move", "args": { "zone": "exit" } },
+    { "actor": "robot", "action": "hold_position" },
+    { "actor": "human", "action": "leave" }
+  ]
+}
