@@ -6,11 +6,13 @@ Cross the room, earn the guard’s trust, talk your way into the safe, or try to
 
 **Windows · macOS · Linux.** Play through your usual **Codex app** using the local bridge, or use Claude Code and other terminal agents. Connect local models through Ollama/LM Studio or a compatible API. You can also play as the guard or connect a different AI to each side.
 
+> **Recommended Codex workflow:** Use a frontier model to install and set up the game. Before playing through the live bridge, switch to **Luna with Medium or High reasoning** in the Codex app, then tell it to **play as the robot**. This is our recommendation for quicker reactions; larger models or heavier reasoning can make the guard noticeably slower.
+
 ### Let your AI install and play
 
 Paste this repository’s URL into your terminal agent, followed by:
 
-> Clone this repository and read AGENTS.md. Install and launch Guard Lab on this computer. Play the robot through the live bridge while I play the human. Use only your role’s observations. Keep your turn active: listen, take one action, then listen again until the encounter ends or I stop you.
+> Clone this repository and read AGENTS.md. Install and set up Guard Lab on this computer. If we are using the Codex live bridge, stop after setup, before launching the game, and remind me to switch to Luna with Medium or High reasoning. When I ask you to start, play the robot while I play the human. Use only your role’s observations. Keep your turn active during play: listen, take one action, then listen again until the encounter ends or I stop you.
 
 The agent needs terminal access and a graphical desktop. Node.js 22+ and npm are required; setup installs the locked dependencies, and the app automatically downloads missing English voices. The live bridge needs no separate API key. Local models must be installed separately; direct API connections require a tool-capable chat-completions endpoint. Other API formats can be added with an adapter.
 
