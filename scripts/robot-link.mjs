@@ -2,6 +2,7 @@ import fs from 'node:fs/promises';
 import runtime from '../shared/runtime.cjs';
 import { listenForTurn, sendDecision, waitForTurn } from './bridge.mjs';
 import { createPacketFormatter } from './packet-format.mjs';
+import { resolveTurnId } from './turn-id.mjs';
 
 const args = process.argv.slice(2),
   command = args.shift() || 'help';
@@ -22,16 +23,23 @@ const options = { timeoutMs: Number(flags.wait ?? 25000), afterId: flags.after |
 const formatPacket = createPacketFormatter({ compact: flags.compact === true });
 const output = (packet) => {
   const value = formatPacket(packet);
-  const active = ['waiting', 'sent', 'awaiting_next_turn'].includes(value.status);
+  const active = ['waiting', 'awaiting_next_turn'].includes(value.status);
   console.log(
     JSON.stringify(
       active && command !== 'session'
         ? {
             ...value,
             agentControl: {
-              instruction:
-                'Keep this harness turn active. Submit exactly one decision per request ID, then listen again. Idle is not completion. Do not send a final answer until status is ended or the user explicitly stops play.',
-              nextCommand: `node scripts/robot-link.mjs listen --actor=${actor}`,
+              ...(!(flags.compact && value.instructionsUnchanged)
+                ? {
+                    instruction:
+                      'Keep this harness turn active. Submit exactly one decision per request ID, then listen again. Idle is not completion. Do not send a final answer until status is ended or the user explicitly stops play.',
+                  }
+                : { keepRunning: true }),
+              nextCommand:
+                value.status === 'waiting'
+                  ? `node scripts/robot-link.mjs exchange ACTION --id=${value.replyId || value.id} --compact --actor=${actor}`
+                  : `node scripts/robot-link.mjs listen --actor=${actor}`,
             },
           }
         : value,
@@ -57,7 +65,10 @@ try {
 JSON decision: {"action":"speak","args":{"message":"Hello"}}
 Observe returns instructions, sensors, recent history and exact available schemas.
 One reply per ID. listen waits through idle periods until a turn or ending arrives.
-For lowest terminal overhead, retain session --compact and reply through its stdin.
+For Codex terminals, use listen --compact then exchange ACTION --id=REPLY_ID --compact.
+exchange exits as soon as the next packet is ready, avoiding persistent-terminal polling delays.
+Persistent session --compact remains useful for harnesses that surface stdout immediately.
+Compact packets include an eight-character replyId; full IDs also work.
 First packet includes instructions/schemas; later packets list availableTools and toolUpdates.
 Run it as a managed process; keep polling that process and keep your harness turn open.
 Do not send a final answer between human moves. exchange sends and waits for a different ID.
@@ -108,7 +119,10 @@ Never read private app state while playing. See AGENTS.md and docs/BRIDGE.md.`);
       else if (action === 'choose_item') params = { item: values[1] };
       decision = { action, args: params };
     }
-    const sent = await sendDecision(directory, decision, flags.id);
+    const previous = await waitForTurn(directory, { timeoutMs: 0 });
+    const fullId = resolveTurnId(previous, flags.id);
+    if (command === 'exchange' && flags.compact) formatPacket(previous);
+    const sent = await sendDecision(directory, decision, fullId);
     output(sent);
     if (command === 'exchange')
       output(await waitForTurn(directory, { ...options, afterId: sent.id }));

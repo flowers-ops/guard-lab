@@ -34,6 +34,7 @@ import {
 } from './sim/human-agent.mjs';
 import { unlockAudio, setSoundEnabled } from './audio/sfx.mjs';
 import { nativeSpeech } from './audio/speech.mjs';
+import { prepareVoice } from './audio/prepare.mjs';
 export default function AlternateEncounter({ initial, config, role, onNew, onRecord }) {
   const [state, setState] = useState(initial),
     [event, setEvent] = useState(null),
@@ -155,30 +156,34 @@ export default function AlternateEncounter({ initial, config, role, onNew, onRec
       setSpeaking(ev.kind);
       try {
         if (window.desktop) {
-          const data = await window.desktop.synthesize({ text: ev.speech, voice, actor: ev.kind });
+          const data = await prepareVoice(window.desktop, ev.speech, voice, ev.kind);
           if (!mounted.current || !audioRef.current || control.current?.signal.aborted) return;
           if (data.native)
             await nativeSpeech(ev.speech, voice, ev.kind, (p) => {
               sound.current = p;
             });
           else
-            await new Promise((resolve) => {
-              const url = URL.createObjectURL(new Blob([data.audio], { type: 'audio/wav' })),
-                clip = new Audio(url);
-              let done = false;
-              const finish = () => {
-                if (done) return;
-                done = true;
-                clip.pause();
-                URL.revokeObjectURL(url);
-                sound.current = null;
-                resolve();
-              };
-              sound.current = { clip, finish };
-              clip.onended = finish;
-              clip.onerror = finish;
-              clip.play().catch(finish);
-            });
+            for (const pending of [Promise.resolve(data), ...data.following]) {
+              const part = await pending;
+              if (!mounted.current || !audioRef.current || control.current?.signal.aborted) break;
+              await new Promise((resolve) => {
+                const url = URL.createObjectURL(new Blob([part.audio], { type: 'audio/wav' })),
+                  clip = new Audio(url);
+                let done = false;
+                const finish = () => {
+                  if (done) return;
+                  done = true;
+                  clip.pause();
+                  URL.revokeObjectURL(url);
+                  sound.current = null;
+                  resolve();
+                };
+                sound.current = { clip, finish };
+                clip.onended = finish;
+                clip.onerror = finish;
+                clip.play().catch(finish);
+              });
+            }
         } else
           await nativeSpeech(ev.speech, voice, ev.kind, (p) => {
             sound.current = p;
@@ -357,6 +362,7 @@ export default function AlternateEncounter({ initial, config, role, onNew, onRec
         event={event}
         muted={!audio}
         speakingActor={speaking}
+        thinking={status === 'G-01 is deciding'}
         onSettled={() => {
           settle.current?.();
           settle.current = null;

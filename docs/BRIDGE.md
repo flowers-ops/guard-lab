@@ -4,7 +4,17 @@ The live bridge is local file IPC, independent of any AI vendor. Electron reques
 
 ## Observe → decide → act
 
-For a harness that retains stdin, prefer one persistent process:
+For Codex terminal tools, prefer a command that exits as soon as its next packet is ready:
+
+```sh
+node scripts/robot-link.mjs listen --compact
+# Read that packet, decide, then submit and await the next packet in one call:
+node scripts/robot-link.mjs exchange hold_position --id=REPLY_ID --compact
+```
+
+Use the packet's eight-character `replyId`, or its full `id`. The alias is checked against the active full request ID; stale and duplicate submissions still fail. `exchange --compact` reuses the instructions/schemas from the request you just answered and supplies current sensors plus new/changed schemas for the next turn. Changed instructions cause a full packet again. Keep your harness turn active. If a managed command is still running, resume the same task in short waits of 1–5 seconds: long fixed terminal polls can add latency even after output arrives.
+
+For a harness that retains stdin and delivers stdout immediately, a persistent process also works:
 
 ```sh
 node scripts/robot-link.mjs session --compact
@@ -41,7 +51,7 @@ The one-shot CLI adds `agentControl` to active packets and submission acknowledg
 
 The game waits up to 15 minutes per live request and cancels on pause/new session/exit. Duplicate submissions, stale IDs, unavailable tools and malformed/schema-invalid arguments are rejected before the decision is sent. Actual simulation constraints are checked by the engine: a schema-valid out-of-range attack can fail and consume that turn. No command can make the model's claimed physical result true by assertion.
 
-Event timing records distinguish `awaitingAgentMs` (published request to submitted decision), `bridgeMs` (submission to app receipt), and total `decisionMs`. Model/harness scheduling, spoken-line duration and presentation are separate sources of delay; the bridge cannot accelerate model inference. Human presentation and decision requests already overlap. Windows sharing violations during publication are retried by observers rather than disconnecting them.
+Event timing records distinguish `awaitingAgentMs` (published request to submission), `bridgeMs` (submission to app receipt), and `decisionMs` (request to resolved decision). The main encounter also records `visualReactionMs` (first scene frame), `speechStartMs` (first audible speech playback), `reactionMs` (the earlier of these), `presentationWaitMs`, and `turnCompleteMs` (speech/animation complete), all measured from the request where applicable. The transcript shows decision and reaction times. A `guard-lab:turn-timing` browser event provides role-neutral diagnostics for benchmark tools. Model/harness scheduling and spoken-line duration remain separate sources of delay; the bridge cannot accelerate model inference. Human presentation and decisions already overlap. Live rendering continues behind other windows, preventing animation-fallback delays. Windows sharing violations are retried rather than disconnecting observers. See [measured latency](LATENCY.md).
 
 ## Structured decisions
 

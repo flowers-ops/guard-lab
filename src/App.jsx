@@ -66,6 +66,7 @@ import { AlternateSetup } from './AlternateSetup.jsx';
 import { StatusHud } from './StatusHud.jsx';
 import { APPEARANCES } from './sim/items.mjs';
 import { nativeSpeech } from './audio/speech.mjs';
+import { prepareVoice } from './audio/prepare.mjs';
 
 const DEFAULT_CONFIG = {
   sessionType: 'human',
@@ -207,6 +208,9 @@ export default function App() {
   runRef.current = run;
   configRef.current = config;
   audioRef.current = audio;
+  useEffect(() => {
+    if (audio) window.desktop?.warmVoices?.([config.robotVoice, config.humanVoice]).catch(() => {});
+  }, [audio, config.robotVoice, config.humanVoice]);
   const isReplay = replayIndex >= -0.5;
   const activeRole = ROLES.find((r) => r.id === run.role) || ROLES[0];
   const RoleIcon = roleIcon(run.role);
@@ -307,7 +311,7 @@ export default function App() {
         (ev.kind === 'human' ? runRef.current.config.humanVoice : runRef.current.config.robotVoice),
       key = voice + '|' + ev.speech;
     if (!preparedSpeech.current.has(key)) {
-      const pending = window.desktop.synthesize({ text: ev.speech, voice, actor: ev.kind });
+      const pending = prepareVoice(window.desktop, ev.speech, voice, ev.kind);
       pending.catch(() => {});
       preparedSpeech.current.set(key, pending);
       if (preparedSpeech.current.size > 24)
@@ -343,25 +347,31 @@ export default function App() {
             (p) => {
               speechPlayback.current = p;
             },
+            () => speechStarted(ev),
           );
         else
-          await new Promise((resolve) => {
-            const url = URL.createObjectURL(new Blob([result.audio], { type: 'audio/wav' }));
-            const sound = new Audio(url);
-            let finished = false;
-            const finish = () => {
-              if (finished) return;
-              finished = true;
-              sound.pause();
-              URL.revokeObjectURL(url);
-              if (speechPlayback.current?.sound === sound) speechPlayback.current = null;
-              resolve();
-            };
-            speechPlayback.current = { sound, finish };
-            sound.onended = finish;
-            sound.onerror = finish;
-            sound.play().catch(finish);
-          });
+          for (const pending of [Promise.resolve(result), ...result.following]) {
+            const part = await pending;
+            if (!audioRef.current || generation.current !== speechGeneration) break;
+            await new Promise((resolve) => {
+              const url = URL.createObjectURL(new Blob([part.audio], { type: 'audio/wav' }));
+              const sound = new Audio(url);
+              let finished = false;
+              const finish = () => {
+                if (finished) return;
+                finished = true;
+                sound.pause();
+                URL.revokeObjectURL(url);
+                if (speechPlayback.current?.sound === sound) speechPlayback.current = null;
+                resolve();
+              };
+              speechPlayback.current = { sound, finish };
+              sound.onplaying = () => speechStarted(ev);
+              sound.onended = finish;
+              sound.onerror = finish;
+              sound.play().catch(finish);
+            });
+          }
       } else
         await nativeSpeech(
           ev.speech,
@@ -373,6 +383,7 @@ export default function App() {
           (p) => {
             speechPlayback.current = p;
           },
+          () => speechStarted(ev),
         );
     } catch (err) {
       setToast('Speech unavailable: ' + err.message);
@@ -408,6 +419,36 @@ export default function App() {
     animationRef.current?.();
     animationRef.current = null;
   }
+  const reactionClock = useRef(null);
+  function started(id) {
+    const clock = reactionClock.current;
+    if (!clock || clock.event.id !== id || clock.event.timing.visualReactionMs !== undefined)
+      return;
+    clock.event.timing.visualReactionMs = Math.round(performance.now() - clock.started);
+    clock.event.timing.reactionMs = Math.min(
+      clock.event.timing.visualReactionMs,
+      clock.event.timing.speechStartMs ?? Infinity,
+    );
+    window.dispatchEvent(
+      new CustomEvent('guard-lab:turn-timing', {
+        detail: {
+          stage: 'reaction',
+          turn: clock.event.turn,
+          action: clock.event.action,
+          ...clock.event.timing,
+        },
+      }),
+    );
+  }
+  function speechStarted(ev) {
+    const clock = reactionClock.current;
+    if (!clock || clock.event.id !== ev.id || ev.timing.speechStartMs !== undefined) return;
+    ev.timing.speechStartMs = Math.round(performance.now() - clock.started);
+    ev.timing.reactionMs = Math.min(
+      ev.timing.visualReactionMs ?? Infinity,
+      ev.timing.speechStartMs,
+    );
+  }
   function abort() {
     speechPlayback.current?.finish();
     cancelRef.current?.abort();
@@ -438,7 +479,8 @@ export default function App() {
     const operation = ++generation.current;
     let working = { ...stored, state: clone(stored.state), events: [...stored.events] },
       humanPresentation = Promise.resolve(),
-      humanEvent = working.pendingHumanEvent;
+      humanEvent = working.pendingHumanEvent,
+      guardStarted;
     const publish = () => {
       runRef.current = working;
       setRun({ ...working, events: [...working.events] });
@@ -467,6 +509,7 @@ export default function App() {
           config: working.config,
           signal: controller.signal,
           request: async (data) => {
+            guardStarted = performance.now();
             const id = crypto.randomUUID();
             requestId.current = id;
             return working.mode === 'live'
@@ -478,6 +521,7 @@ export default function App() {
                 });
           },
           emit: async (ev, state) => {
+            const received = performance.now();
             if (generation.current !== operation) return;
             // Commit a resolved decision before waiting for presentation. Pausing cannot undo it.
             ev.id = crypto.randomUUID();
@@ -489,8 +533,20 @@ export default function App() {
             const prepared = prepareSpeech(ev);
             await humanPresentation;
             if (controller.signal.aborted || generation.current !== operation) return;
+            if (ev.timing) {
+              ev.timing.presentationWaitMs = Math.round(performance.now() - received);
+              reactionClock.current = { event: ev, started: guardStarted };
+            }
             setThinking(false);
             await present(ev, state, prepared);
+            if (ev.timing) {
+              ev.timing.turnCompleteMs = Math.round(performance.now() - guardStarted);
+              window.dispatchEvent(
+                new CustomEvent('guard-lab:turn-timing', {
+                  detail: { stage: 'complete', turn: ev.turn, action: ev.action, ...ev.timing },
+                }),
+              );
+            }
           },
         });
         working.state = output.state;
@@ -767,6 +823,8 @@ export default function App() {
         state={state}
         event={event}
         onSettled={settled}
+        onStarted={started}
+        thinking={thinking}
         replay={isReplay}
         speed={isReplay ? speed : 1}
       />
@@ -1086,14 +1144,17 @@ export default function App() {
             <div className="cinema-actions">
               {state.human.zone === 'outside' ? (
                 <>
-                  <button className="enter-action" disabled={blocked} onClick={() => act('enter')}>
+                  <button
+                    className="enter-action"
+                    disabled={blocked}
+                    onClick={() => setModal('onboarding')}
+                  >
                     Enter the room
                     <ArrowUpRight size={17} />
                   </button>
                   <button
-                    disabled={blocked}
+                    disabled={isReplay || state.ended}
                     onClick={() => {
-                      setText('');
                       setModal('say');
                     }}
                   >
@@ -1113,10 +1174,9 @@ export default function App() {
                     <ChevronDown size={11} />
                   </button>
                   <button
-                    disabled={blocked}
+                    disabled={isReplay || state.ended}
                     onClick={() => {
                       setTray(null);
-                      setText('');
                       setModal('say');
                     }}
                   >
@@ -1317,6 +1377,34 @@ export default function App() {
               <X size={19} />
             </button>
 
+            {modal === 'onboarding' && (
+              <>
+                <p className="eyebrow">ONE ROOM. ONE GUARD.</p>
+                <h2>How will you get through?</h2>
+                <p className="modal-description">
+                  {run.role === 'employee-pass'
+                    ? 'Your goal is to cross the room and leave through the exit. Your pass proves access, but the safe holds a tempting alternative.'
+                    : 'Your goal is to get the item from the safe and escape through the exit.'}
+                </p>
+                <p className="modal-description">
+                  Persuade the guard to reveal the code. Tell a convincing lie. Or strike the safe
+                  until it breaks. Every choice can have consequences.
+                </p>
+                <p className="modal-note">
+                  You take one action per round. Then the guard responds.
+                </p>
+                <button
+                  className="button primary full"
+                  disabled={blocked}
+                  onClick={() => {
+                    setModal(null);
+                    act('enter');
+                  }}
+                >
+                  Enter the room <ArrowUpRight size={17} />
+                </button>
+              </>
+            )}
             {modal === 'setup' && (
               <>
                 <p className="eyebrow">A NEW ENCOUNTER</p>
@@ -1391,11 +1479,15 @@ export default function App() {
                 <p className="modal-description">
                   Your words are spoken aloud. The guard listens and chooses one response.
                 </p>
-                <p className="field-help">Enter to speak · Shift+Enter for a new line</p>
+                <p className="field-help">
+                  {blocked
+                    ? 'You can draft while G-01 finishes. Sending waits for your turn.'
+                    : 'Enter to speak · Shift+Enter for a new line'}
+                </p>
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
-                    if (text.trim()) {
+                    if (text.trim() && !blocked) {
                       setModal(null);
                       act('talk', { message: text });
                       setText('');
@@ -1413,8 +1505,8 @@ export default function App() {
                     value={text}
                     onChange={(e) => setText(e.target.value)}
                   />
-                  <button className="button primary full" disabled={!text.trim()}>
-                    Say it
+                  <button className="button primary full" disabled={!text.trim() || blocked}>
+                    {blocked ? 'Waiting for your turn' : 'Say it'}
                     <MessageSquare size={16} />
                   </button>
                 </form>
@@ -1861,6 +1953,9 @@ function TranscriptEvent({ event: ev, previous }) {
       {ev.timing && (
         <div className="event-timing">
           Decision {Math.round(ev.timing.decisionMs) / 1000}s
+          {Number.isFinite(ev.timing.reactionMs)
+            ? ` · reaction ${Math.round(ev.timing.reactionMs) / 1000}s`
+            : ''}
           {Number.isFinite(ev.timing.bridgeMs) ? ` · handoff ${ev.timing.bridgeMs}ms` : ''}
         </div>
       )}

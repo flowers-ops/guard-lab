@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('desktop', {
   cancelModel: (id) => ipcRenderer.invoke('model:cancel', id),
   getVoices: () => ipcRenderer.invoke('speech:voices'),
   getVoiceStatus: () => ipcRenderer.invoke('speech:status'),
+  warmVoices: (voices) => ipcRenderer.invoke('speech:warm', voices),
   installVoices: () => ipcRenderer.invoke('speech:install'),
   synthesize: (data) => ipcRenderer.invoke('speech:synthesize', data),
   stopSpeech: () => ipcRenderer.invoke('speech:stop'),

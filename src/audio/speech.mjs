@@ -12,7 +12,7 @@ export function selectEnglishVoice(voices, voiceId, actor) {
   );
 }
 
-export async function nativeSpeech(text, voiceId, actor, onPlayback) {
+export async function nativeSpeech(text, voiceId, actor, onPlayback, onStarted) {
   const synthesis = window.speechSynthesis;
   if (!synthesis) throw new Error('Install local Piper voices: npm run voices:install.');
   if (!synthesis.getVoices().length) {
@@ -58,6 +58,7 @@ export async function nativeSpeech(text, voiceId, actor, onPlayback) {
       },
     });
     utterance.onend = () => finish();
+    utterance.onstart = () => onStarted?.();
     utterance.onerror = (event) =>
       finish(
         event.error !== 'canceled' && event.error !== 'interrupted'

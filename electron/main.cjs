@@ -61,6 +61,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      backgroundThrottling: !liveRobot,
       autoplayPolicy: 'no-user-gesture-required',
     },
   });
@@ -163,6 +164,7 @@ ipcMain.handle('robot:session-mode', () =>
   process.argv.includes('--showcase') ? 'showcase' : liveRobot ? 'live' : null,
 );
 ipcMain.handle('robot:request', async (_, data) => {
+  window?.webContents.setBackgroundThrottling(false);
   const actor = data.actor || 'robot';
   const controller = new AbortController();
   requests.set(data.id, controller);
@@ -179,6 +181,11 @@ ipcMain.handle('speech:voices', async () => {
   return { voices: localVoices.voices() };
 });
 ipcMain.handle('speech:status', () => voiceInstall);
+ipcMain.handle('speech:warm', async (_, voices) => {
+  await ensureVoices();
+  await localVoices.warm(Array.isArray(voices) ? voices.slice(0, 3) : []);
+  return true;
+});
 ipcMain.handle('speech:install', async () => {
   if (voiceInstall.phase === 'error') voicePromise = null;
   await ensureVoices();
@@ -188,6 +195,7 @@ ipcMain.handle('robot:result', async (_, { actor, observation, ended }) =>
   (await bridge).reportResult(bridgeDirectory(actor), { observation, ended }),
 );
 ipcMain.handle('robot:reset', async (_, actors) => {
+  if (actors.length) window?.webContents.setBackgroundThrottling(false);
   for (const controller of requests.values()) controller.abort();
   for (const actor of actors) await (await bridge).resetChannel(bridgeDirectory(actor));
 });

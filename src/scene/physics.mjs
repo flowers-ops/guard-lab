@@ -27,6 +27,28 @@ export function surfaceContact(origin, center, projectileRadius = 0.04) {
 export function safeReach(shoulder, aim, deviceLength) {
   return Math.max(0, Math.min(0.63, shoulder.distanceTo(aim) - 0.33 - deviceLength - 0.08));
 }
+export function warningRaised(distance, deviceLength, wasRaised, obstructed = false) {
+  return obstructed || distance < deviceLength + (wasRaised ? 1.05 : 0.85);
+}
+export function segmentHitsBox(from, to, box, padding = 0.1) {
+  let low = 0,
+    high = 1;
+  for (const axis of ['x', 'y', 'z']) {
+    const delta = to[axis] - from[axis];
+    const min = box.min[axis] - padding,
+      max = box.max[axis] + padding;
+    if (Math.abs(delta) < 1e-8) {
+      if (from[axis] < min || from[axis] > max) return false;
+    } else {
+      const a = (min - from[axis]) / delta,
+        b = (max - from[axis]) / delta;
+      low = Math.max(low, Math.min(a, b));
+      high = Math.min(high, Math.max(a, b));
+      if (low > high) return false;
+    }
+  }
+  return true;
+}
 export function raisedEquipmentPose(shoulder, aim) {
   return {
     grip: shoulder.clone().add(new Vector3(-0.12, 0.69, aim.z >= shoulder.z ? -0.12 : 0.12)),

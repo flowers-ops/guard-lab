@@ -1,5 +1,6 @@
 import readline from 'node:readline';
 import { waitForTurn, sendDecision } from '../shared/bridge.mjs';
+import { resolveTurnId, replyId } from './turn-id.mjs';
 
 // JSON-lines transport for harnesses that retain one subprocess per actor.
 export async function agentSession(directory, output) {
@@ -22,16 +23,16 @@ export async function agentSession(directory, output) {
       while (true) {
         const next = await lines.next();
         if (next.done) return;
+        if (!next.value.trim()) continue;
         try {
           const decision = JSON.parse(next.value);
-          if (decision.id !== packet.id)
-            throw new Error('Reply must include the current packet id.');
+          const fullId = resolveTurnId(packet, decision.id);
           const { id, ...action } = decision;
-          output(await sendDecision(directory, action, id));
+          output(await sendDecision(directory, action, fullId));
           afterId = id;
           break;
         } catch (error) {
-          output({ error: error.message });
+          output({ error: error.message, id: packet.id, replyId: replyId(packet) });
           const current = await waitForTurn(directory, { timeoutMs: 0 });
           if (current.id !== packet.id) {
             afterId = packet.id;

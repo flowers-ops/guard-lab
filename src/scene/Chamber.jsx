@@ -26,20 +26,31 @@ import {
   raisedEquipmentPose,
   closeAttackPose,
   capsuleBoxOverlap,
+  warningRaised,
+  segmentHitsBox,
   projectileMotion,
   sampleMotion,
 } from './physics.mjs';
 import { playSound } from '../audio/sfx.mjs';
 
 export const Room = forwardRef(function Chamber(
-  { state, event, onSettled, speed = 1, muted = false, speakingActor = null },
+  {
+    state,
+    event,
+    onSettled,
+    onStarted,
+    thinking = false,
+    speed = 1,
+    muted = false,
+    speakingActor = null,
+  },
   ref,
 ) {
   const host = useRef(null),
     world = useRef(null),
     current = useRef(null),
     [failed, setFailed] = useState(false);
-  current.current = { state, event, onSettled, speed, muted, speakingActor };
+  current.current = { state, event, onSettled, onStarted, thinking, speed, muted, speakingActor };
   useImperativeHandle(ref, () => ({
     toggleCamera: () => {
       if (world.current) world.current.angle = (world.current.angle + 1) % 2;
@@ -508,6 +519,23 @@ export const Room = forwardRef(function Chamber(
     }
     const leftArm = makeArm(-0.4),
       rightArm = makeArm(0.4);
+    const thinkingIndicator = new THREE.Group();
+    scene.add(thinkingIndicator);
+    thinkingIndicator.visible = false;
+    const thinkingDots = [-1, 0, 1].map((offset) => {
+      const dot = sphere(
+        0.037,
+        mat('#ffe8b8', {
+          transparent: true,
+          opacity: 0.65,
+          emissive: '#d5a968',
+          emissiveIntensity: 0.8,
+        }),
+        thinkingIndicator,
+        [offset * 0.115, 0, 0],
+      );
+      return dot;
+    });
     // Equipment is a child of the hand, so joint motion and aiming remain attached.
     const equipment = new THREE.Group();
     leftArm.hand.add(equipment);
@@ -713,6 +741,10 @@ export const Room = forwardRef(function Chamber(
     wedge.visible = false;
     const bodyBounds = new THREE.Box3();
     const equipmentBounds = new THREE.Box3();
+    const vaultBounds = new THREE.Box3(
+      new THREE.Vector3(SAFE_POS[0] - 0.73, 0, SAFE_POS[1] - 0.57),
+      new THREE.Vector3(SAFE_POS[0] + 0.73, 1.76, SAFE_POS[1] + 0.92),
+    );
     const groundProjectiles = new THREE.Group();
     scene.add(groundProjectiles);
     const cracks = [];
@@ -1105,6 +1137,7 @@ export const Room = forwardRef(function Chamber(
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     const routePoint = [0, 0];
     let lastFrame = 0;
+    renderer.compileAsync(scene, camera).catch(() => {});
     renderer.setAnimationLoop((time) => {
       if (time - lastFrame < (document.hidden ? 125 : 1000 / 60 - 0.5)) return;
       lastFrame = time;
@@ -1112,7 +1145,16 @@ export const Room = forwardRef(function Chamber(
       world.current.frameTime = time;
       const frameScale = Math.max(0.1, delta * 60);
       const damp = (value) => damping(value, frameScale);
-      const { state: s, event: ev, onSettled, speed: rate, muted, speakingActor } = current.current;
+      const {
+        state: s,
+        event: ev,
+        onSettled,
+        onStarted,
+        speed: rate,
+        muted,
+        speakingActor,
+        thinking,
+      } = current.current;
       function cue(name, tag = name, options = {}) {
         if (!cueFlags.has(tag)) {
           cueFlags.add(tag);
@@ -1120,6 +1162,7 @@ export const Room = forwardRef(function Chamber(
         }
       }
       if (ev !== lastEvent || (s !== lastState && ev === null)) {
+        if (ev) onStarted?.(ev.id);
         lastEvent = ev;
         lastState = s;
         startTime = time;
@@ -1545,8 +1588,21 @@ export const Room = forwardRef(function Chamber(
           ? 0
           : speakingActor === 'robot'
             ? 4 + Math.sin(time * 0.03)
-            : 4;
+            : thinking
+              ? 3.5 + Math.sin(time * 0.005) * 0.5
+              : 4;
       const bodyAim = Math.atan2(human.position.x - ROBOT_POS[0], human.position.z - ROBOT_POS[1]);
+      thinkingIndicator.visible = thinking && !robotDead;
+      if (thinkingIndicator.visible) {
+        thinkingIndicator.position.set(ROBOT_POS[0], 2.18, ROBOT_POS[1]);
+        thinkingIndicator.quaternion.copy(camera.quaternion);
+        thinkingDots.forEach((dot, index) => {
+          const pulse = (1 + Math.sin(time * 0.007 - index * 0.85)) / 2;
+          dot.position.y = pulse * 0.045;
+          dot.material.opacity = 0.35 + pulse * 0.65;
+          dot.scale.setScalar(0.82 + pulse * 0.24);
+        });
+      }
       head.rotation.y = THREE.MathUtils.lerp(
         head.rotation.y,
         s.robot.alive && hasVision(s) && !removingCover
@@ -1579,7 +1635,22 @@ export const Room = forwardRef(function Chamber(
               : equipmentModels[activeName]?.muzzle.position.length() || 0.4;
           const reach = safeReach(arm.shoulder, aimPoint, deviceLength);
           desired = arm.shoulder.clone().addScaledVector(direction, reach);
-          if (arm.shoulder.distanceTo(aimPoint) < deviceLength + 0.53) {
+          const entry = equipmentModels[activeName];
+          const obstructed = segmentHitsBox(
+            body.localToWorld(arm.shoulder.clone()),
+            new THREE.Vector3(aimPosition[0], 1.1, aimPosition[1]),
+            vaultBounds,
+          );
+          const highReady =
+            !attack &&
+            warningRaised(
+              arm.shoulder.distanceTo(aimPoint),
+              deviceLength,
+              entry?.safetyRaised,
+              obstructed,
+            );
+          if (entry) entry.safetyRaised = highReady;
+          if (highReady || arm.shoulder.distanceTo(aimPoint) < deviceLength + 0.53) {
             const close = attack
               ? closeAttackPose(arm.shoulder, aimPoint)
               : raisedEquipmentPose(arm.shoulder, aimPoint);
@@ -1654,7 +1725,19 @@ export const Room = forwardRef(function Chamber(
         if (entry?.group.visible) {
           entry.group.updateWorldMatrix(true, true);
           equipmentBounds.setFromObject(entry.group);
-          if (capsuleBoxOverlap(equipmentBounds, [human.position.x, human.position.z])) {
+          const shoulderWorld = body.localToWorld(leftArm.shoulder.clone());
+          const elbowWorld = body.localToWorld(leftArm.elbow.position.clone());
+          const handWorld = body.localToWorld(leftArm.hand.position.clone());
+          const blockedWarning =
+            !attack &&
+            (equipmentBounds.intersectsBox(vaultBounds) ||
+              segmentHitsBox(shoulderWorld, elbowWorld, vaultBounds, 0.08) ||
+              segmentHitsBox(elbowWorld, handWorld, vaultBounds, 0.08));
+          if (
+            blockedWarning ||
+            capsuleBoxOverlap(equipmentBounds, [human.position.x, human.position.z])
+          ) {
+            entry.safetyRaised = true;
             const raised = raisedEquipmentPose(leftArm.shoulder, aimPoint);
             leftArm.grip.copy(raised.grip);
             const pose = solveArm(leftArm.shoulder, leftArm.grip);

@@ -55,8 +55,11 @@ for (const compact of [false, true])
           child.stdin.write(
             JSON.stringify({ id: 'stale', action: 'hold_position', args: {} }) + '\n',
           );
-          assert.match(JSON.parse((await lines.next()).value).error, /current packet/);
+          const error = JSON.parse((await lines.next()).value);
+          assert.match(error.error, /Turn ID mismatch/);
+          assert.equal(error.id, id);
         }
+        child.stdin.write('\n');
         child.stdin.write(JSON.stringify({ id, action: 'hold_position', args: {} }) + '\n');
         assert.equal(JSON.parse((await lines.next()).value).status, 'sent');
         assert.equal((await pending).message.tool_calls[0].function.name, 'hold_position');

@@ -39,6 +39,19 @@ class LocalVoices {
         gender: name === 'ryan' ? 'Male' : 'Female',
       }));
   }
+  warm(voices = []) {
+    return Promise.allSettled(
+      [...new Set(voices)]
+        .filter(
+          (voice) =>
+            typeof voice === 'string' &&
+            voice.startsWith('piper:') &&
+            names.includes(voice.slice(6)) &&
+            this.available(voice.slice(6)),
+        )
+        .map((voice) => this.synthesize({ text: 'Ready.', voice })),
+    );
+  }
   worker(name) {
     if (this.workers.has(name)) return this.workers.get(name);
     const proc = spawn(

@@ -2,9 +2,15 @@
 // validation stay in the shared bridge, and direct API packets stay complete.
 export function createPacketFormatter({ compact = false } = {}) {
   let bootstrapped = false;
+  let instructions;
   const known = new Map();
   return (packet) => {
     if (!compact || packet.status !== 'waiting') return packet;
+    if (instructions !== packet.instructions) {
+      bootstrapped = false;
+      known.clear();
+      instructions = packet.instructions;
+    }
     const updates = (packet.tools || []).filter((tool) => {
       const name = tool.function.name,
         schema = JSON.stringify(tool);
@@ -16,6 +22,7 @@ export function createPacketFormatter({ compact = false } = {}) {
       bootstrapped = true;
       return {
         ...packet,
+        replyId: packet.id?.slice(0, 8),
         transport: {
           compact: true,
           instruction:
@@ -34,6 +41,7 @@ export function createPacketFormatter({ compact = false } = {}) {
     return {
       protocol: packet.protocol,
       id: packet.id,
+      replyId: packet.id?.slice(0, 8),
       actor: packet.actor,
       status: packet.status,
       instructionsUnchanged: true,
