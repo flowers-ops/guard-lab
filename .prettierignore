@@ -6,4 +6,6 @@ release-source
 package-lock.json
 docs/TOOLS.md
 docs/tool-schemas.json
+docs/GPL-3.0-LICENSE.md
+docs/LGPL-3.0-LICENSE.md
 SOURCE-MANIFEST.json

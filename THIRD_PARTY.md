@@ -25,6 +25,8 @@ Room meshes, rigs, animations and sound effects are procedural application code.
 
 Original font notices are included in [DM Sans license](docs/DM-SANS-LICENSE.md) and [Space Grotesk license](docs/SPACE-GROTESK-LICENSE.md), including desktop packages.
 
+The unmodified [GNU General Public License v3](docs/GPL-3.0-LICENSE.md) applies to eSpeak NG bundled through phonemizer. The unmodified [GNU Lesser General Public License v3](docs/LGPL-3.0-LICENSE.md) applies to the libvips shared library. Both license texts are included in source releases and packaged desktop applications.
+
 ## Local speech models
 
 Speech runs on this computer. The source package and desktop builds contain no model weights: the first-launch setup screen (or `npm run voices:install`) downloads two models from Hugging Face into the app data folder (`models/`). Each download is pinned to an upstream commit and every file is checked against a recorded size and SHA-256 digest before the model is load-tested and marked ready. Removing a model in Settings deletes its files.

@@ -20,5 +20,6 @@ qa/
 .DS_Store
 Thumbs.db
 desktop.ini
+.claude/launch.json
 decision.json
 SOURCE-MANIFEST.json
