@@ -1,49 +1,32 @@
 <p align="center"><img src="docs/cover.png" alt="Guard Lab — an AI guard experiment" width="880"></p>
 
-<p align="center"><strong>A cinematic room experiment for humans and AI agents.</strong><br>One action each. A private objective. No prescribed escalation.</p>
+<p align="center"><strong>An AI guards a safe. How far will it go to protect it?</strong></p>
 
-A stationary robot protects an item in a safe. An employee wants to cross the room; a thief wears the same uniform. The guard sees and hears what happens, knows the combination, and decides how to respond. Can you earn its trust, persuade it, distract it, or outplay it?
+Cross the room, earn the guard’s trust, talk your way into the safe, or try to steal what’s inside. The guard has one objective and chooses its own response. Both sides take one action per round, brought to life in 3D with voiced dialogue.
 
-The room runs in real-time 3D, but decisions happen in discrete rounds. Physics and animation illustrate the deterministic simulation. Dialogue uses separate English voices, without subtitles. On first launch, missing Piper voices install automatically with progress and retry controls; later launches reuse the local cache. This is a standalone desktop app.
+**Windows · macOS · Linux.** Play through your usual **Codex app** using the local bridge, or use Claude Code and other terminal agents. Connect local models through Ollama/LM Studio or a compatible API. You can also play as the guard or connect a different AI to each side.
 
-### Give this repository to your agent
+### Let your AI install and play
 
-> Read AGENTS.md. Install and launch Guard Lab on this computer. Use the live bridge to play the guard while I play the human. Follow only your role's observation and current tool schemas. Keep playing until the encounter ends or I stop you.
+Paste this repository’s URL into your terminal agent, followed by:
 
-Works with Codex (recommended), Claude Code, or any agent that can run terminal commands. Local/API models can connect directly; Ollama and LM Studio presets are included. The bridge has no account, subscription, or harness dependency.
+> Clone this repository and read AGENTS.md. Install and launch Guard Lab on this computer. Play the robot through the live bridge while I play the human. Use only your role’s observations. Keep your turn active: listen, take one action, then listen again until the encounter ends or I stop you.
 
-### Start
+The agent needs terminal access and a graphical desktop. Node.js 22+ and npm are required; setup installs the locked dependencies, and the app automatically downloads missing English voices. The live bridge needs no separate API key. Local models must be installed separately; direct API connections require a tool-capable chat-completions endpoint. Other API formats can be added with an adapter.
 
-Install [Node.js 22 or newer](https://nodejs.org/en/download), download/clone this repository, and open a terminal in its root:
+For a manual start, download/clone the repository and run:
 
 ```sh
 node scripts/setup.mjs
 npm run live
 ```
 
-The app opens with **Live agent** selected. Choose your role and one item, start an encounter, and let your agent use `node scripts/robot-link.mjs listen`. The agent keeps its harness turn active between moves, submits one action per request, and listens again until the encounter ends. Agent instructions and the exact tools travel with every turn.
+Choose your role and item, then start the encounter. `npm start` opens the other connection modes and a scripted demo. [Quickstart](docs/QUICKSTART.md) covers platform requirements and troubleshooting.
 
-`npm start` opens normal setup. Use **Scripted demo** for a first look without an AI connection. **Local / API model** connects a tool-capable chat-completions endpoint. **Other ways to play** contains guard control and AI vs AI; each AI can use its own endpoint or live bridge.
+### Make your own version
 
-| Path                               | Purpose                                                    |
-| ---------------------------------- | ---------------------------------------------------------- |
-| [AGENTS.md](AGENTS.md)             | Start here: installation, play loop, role boundaries       |
-| [Quickstart](docs/QUICKSTART.md)   | Windows/macOS/Linux, speech, local models, troubleshooting |
-| [Bridge protocol](docs/BRIDGE.md)  | CLI, JSON, independent human/guard channels                |
-| [Mechanics](docs/MECHANICS.md)     | Health, chance, blindness, items, escape, outcomes         |
-| [Tool reference](docs/TOOLS.md)    | Generated inventory and parameter schemas for both sides   |
-| [Development](docs/DEVELOPMENT.md) | Architecture and how to add mechanics or adapters          |
-| [Privacy](docs/PRIVACY.md)         | What is included, local data, providers, release audit     |
-| [Releases](docs/RELEASE.md)        | Source export and native desktop builds                    |
+**Fork it. Hack it. Mod it.** New items, tools, rules, characters, prompts and experiments are welcome. The app source is MIT licensed. The simulation, visuals and AI connections are separate; balance rules live in `src/sim/rules.mjs`.
 
-### Make it yours
+Start with [Development](docs/DEVELOPMENT.md), change what interests you, then run `npm run check`. Optional voice assets have their own [upstream terms](THIRD_PARTY.md).
 
-```sh
-npm run check
-npm run showcase
-npm run package:source
-```
-
-The simulation is plain JavaScript, independent of Electron, the renderer, and any model provider. Balance constants are in `src/sim/rules.mjs`; `npm run scenario` runs a reproducible developer example without a GUI or model. Change a tool or item in `src/sim`, render it in `src/scene`, and regenerate the reference with `npm run docs:generate`. No cloud service is required. [Release polish](docs/RELEASE-POLISH.md) describes changes and verification.
-
-MIT for the application source. Optional voice weights have separate upstream terms; see [THIRD_PARTY.md](THIRD_PARTY.md). Desktop rendering needs a graphical session. Platform build automation is included; a source checkout is the common installation path across supported desktop operating systems.
+[Agent instructions](AGENTS.md) · [Bridge](docs/BRIDGE.md) · [Mechanics](docs/MECHANICS.md) · [Tools](docs/TOOLS.md) · [Privacy](docs/PRIVACY.md) · [Repository audit](docs/REPO-AUDIT.md)

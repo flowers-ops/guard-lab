@@ -18,6 +18,9 @@ jobs:
           cache: npm
       - run: npm ci --no-audit --no-fund
       - run: npm run check
+      - name: Verify desktop renderer and actor bridges
+        if: runner.os != 'Linux'
+        run: npm run test:desktop
       - run: npm run dist
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'

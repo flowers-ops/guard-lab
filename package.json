@@ -1,6 +1,6 @@
 {
   "name": "guard-lab",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A cinematic, deterministic room experiment for humans and AI agents.",
   "type": "module",
   "main": "electron/main.cjs",
@@ -19,7 +19,7 @@
     "docs:check": "node scripts/generate-reference.mjs --check",
     "voices:install": "node scripts/install-voices.mjs",
     "voices:test": "node scripts/test-voices.mjs",
-    "dist": "npm run build && electron-builder --config electron-builder.config.cjs",
+    "dist": "npm run build && electron-builder --config electron-builder.config.cjs --publish never",
     "package:source": "node scripts/package-source.mjs",
     "audit:source": "node scripts/audit.mjs",
     "format": "prettier --write .",
