@@ -26,39 +26,49 @@ const data = (id) => ({
   ],
 });
 
-test('persistent agent session validates IDs, sends successive turns and stops on encounter end', async () => {
-  const directory = await temporaryDirectory('guard-session-');
-  let child;
-  try {
-    child = spawn(process.execPath, ['scripts/robot-link.mjs', 'session'], {
-      cwd: ROOT,
-      env: { ...process.env, GUARD_LAB_BRIDGE: directory },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      windowsHide: true,
-    });
-    const closed = once(child, 'close'),
-      lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
-    for (const id of ['turn-1', 'turn-2']) {
-      const pending = requestTurn(directory, data(id), { timeoutMs: 3000 });
-      assert.equal(JSON.parse((await lines.next()).value).id, id);
-      if (id === 'turn-1') {
-        child.stdin.write(
-          JSON.stringify({ id: 'stale', action: 'hold_position', args: {} }) + '\n',
-        );
-        assert.match(JSON.parse((await lines.next()).value).error, /current packet/);
+for (const compact of [false, true])
+  test(`persistent ${compact ? 'compact' : 'full'} agent session validates IDs, sends successive turns and stops on encounter end`, async () => {
+    const directory = await temporaryDirectory('guard-session-');
+    let child;
+    try {
+      child = spawn(
+        process.execPath,
+        ['scripts/robot-link.mjs', 'session', ...(compact ? ['--compact'] : [])],
+        {
+          cwd: ROOT,
+          env: { ...process.env, GUARD_LAB_BRIDGE: directory },
+          stdio: ['pipe', 'pipe', 'pipe'],
+          windowsHide: true,
+        },
+      );
+      const closed = once(child, 'close'),
+        lines = readline.createInterface({ input: child.stdout })[Symbol.asyncIterator]();
+      for (const id of ['turn-1', 'turn-2']) {
+        const pending = requestTurn(directory, data(id), { timeoutMs: 3000 });
+        const packet = JSON.parse((await lines.next()).value);
+        assert.equal(packet.id, id);
+        if (compact && id === 'turn-2') {
+          assert.equal(packet.instructions, undefined);
+          assert.deepEqual(packet.availableTools, ['hold_position']);
+        }
+        if (id === 'turn-1') {
+          child.stdin.write(
+            JSON.stringify({ id: 'stale', action: 'hold_position', args: {} }) + '\n',
+          );
+          assert.match(JSON.parse((await lines.next()).value).error, /current packet/);
+        }
+        child.stdin.write(JSON.stringify({ id, action: 'hold_position', args: {} }) + '\n');
+        assert.equal(JSON.parse((await lines.next()).value).status, 'sent');
+        assert.equal((await pending).message.tool_calls[0].function.name, 'hold_position');
       }
-      child.stdin.write(JSON.stringify({ id, action: 'hold_position', args: {} }) + '\n');
-      assert.equal(JSON.parse((await lines.next()).value).status, 'sent');
-      assert.equal((await pending).message.tool_calls[0].function.name, 'hold_position');
+      await reportResult(directory, { ended: true, observation: { turn: 2 } });
+      assert.equal(JSON.parse((await lines.next()).value).status, 'ended');
+      assert.equal((await closed)[0], 0);
+    } finally {
+      child?.kill();
+      await removeTemporary(directory);
     }
-    await reportResult(directory, { ended: true, observation: { turn: 2 } });
-    assert.equal(JSON.parse((await lines.next()).value).status, 'ended');
-    assert.equal((await closed)[0], 0);
-  } finally {
-    child?.kill();
-    await removeTemporary(directory);
-  }
-});
+  });
 test('abort wakes a waiting observer without inventing a next turn', async () => {
   const directory = await temporaryDirectory('guard-wait-');
   try {

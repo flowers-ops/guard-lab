@@ -540,7 +540,10 @@ export function applyTool(before, name, args = {}) {
     if (tool.ammo) {
       s.robot.ammo[name]--;
       s.robot.usedAt[name] = s.turn;
-      if (['throw_foam_ball', 'throw_solid_ball', 'detonate_grenade'].includes(name))
+      if (
+        s.robot.ammo[name] === 0 ||
+        ['throw_foam_ball', 'throw_solid_ball', 'detonate_grenade'].includes(name)
+      )
         s.robot.ready = null;
     }
     if (tool.text) {

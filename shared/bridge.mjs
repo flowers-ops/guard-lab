@@ -3,7 +3,18 @@ import path from 'node:path';
 import { watch } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
-const read = (directory, name) => fs.readFile(path.join(directory, name), 'utf8').then(JSON.parse);
+async function read(directory, name) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return JSON.parse(await fs.readFile(path.join(directory, name), 'utf8'));
+    } catch (error) {
+      const sharing =
+        process.platform === 'win32' && ['EPERM', 'EACCES', 'EBUSY'].includes(error.code);
+      if (!sharing || attempt >= 6) throw error;
+      await new Promise((resolve) => setTimeout(resolve, 5 * 2 ** attempt));
+    }
+  }
+}
 const missing = (e) => e.code === 'ENOENT' || e instanceof SyntaxError;
 const parse = (value) => {
   try {
@@ -232,7 +243,10 @@ export async function requestTurn(directory, data, { signal, timeoutMs = 900000 
             JSON.stringify(valid.args).replaceAll('{{safe_code}}', code || '{{safe_code}}'),
           );
           return {
-            timing: { bridgeMs: Math.max(0, Date.now() - (reply.sentAt || Date.now())) },
+            timing: {
+              awaitingAgentMs: Math.max(0, (reply.sentAt || Date.now()) - started),
+              bridgeMs: Math.max(0, Date.now() - (reply.sentAt || Date.now())),
+            },
             message: {
               role: 'assistant',
               content: null,

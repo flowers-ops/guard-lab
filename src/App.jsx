@@ -1,6 +1,7 @@
 import { loadArchive, saveArchive } from './ui/archive.mjs';
 import { RULES, humanHasVision } from './sim/rules.mjs';
 import { submitSpeechOnEnter } from './ui/keyboard.mjs';
+import { migrateToolConfig, TOOL_VERSION } from './ui/config.mjs';
 import React, { useEffect, useRef, useState } from 'react';
 import {
   Shield,
@@ -79,7 +80,7 @@ const DEFAULT_CONFIG = {
   humanVoice: 'piper:ryan',
   appearance: 'male',
   item: 'sack',
-  toolVersion: 4,
+  toolVersion: TOOL_VERSION,
   combination: '',
 };
 function readStored(key, fallback) {
@@ -90,16 +91,7 @@ function readStored(key, fallback) {
   }
 }
 function storedConfig() {
-  const saved = readStored('guard-config', {}),
-    c = { ...DEFAULT_CONFIG, ...saved };
-  if ((saved.toolVersion || 0) < 3)
-    c.enabled = [
-      ...new Set([...c.enabled, 'verify_work_order', 'inspect_object', 'cycle_exit_door']),
-    ];
-  if ((saved.toolVersion || 0) < 4) c.enabled = [...new Set([...c.enabled, 'remove_camera_cover'])];
-  if (c.item === 'recording') c.item = 'pistol';
-  c.toolVersion = 4;
-  return c;
+  return migrateToolConfig(readStored('guard-config', {}), DEFAULT_CONFIG);
 }
 function makeRun(role, config) {
   const combination = /^[0-9]{4}$/.test(config.combination)

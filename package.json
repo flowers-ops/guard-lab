@@ -1,6 +1,6 @@
 {
   "name": "guard-lab",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A cinematic, deterministic room experiment for humans and AI agents.",
   "type": "module",
   "main": "electron/main.cjs",

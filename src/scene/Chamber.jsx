@@ -1,6 +1,14 @@
 import { movementPath, pathPosition } from './paths.mjs';
-import { characterDetails } from './character.mjs';
-import { locomotion, springExtension, impactEnvelope, damping } from './motion.mjs';
+import { createPlayerRig } from './character.mjs';
+import {
+  locomotion,
+  legPose,
+  travelProgress,
+  safeDoorOpenness,
+  springExtension,
+  impactEnvelope,
+  damping,
+} from './motion.mjs';
 import { ImpactParticles, cinematicPass } from './impact-fx.mjs';
 import React, { useEffect, useRef, useState, forwardRef, useImperativeHandle } from 'react';
 import * as THREE from 'three';
@@ -12,7 +20,15 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { ROBOT_POS, SAFE_POS, ZONES, hasVision } from '../sim/engine.mjs';
 import { solveArm, orientSegment, actionDuration } from './rig.mjs';
-import { surfaceContact, safeReach, projectileMotion, sampleMotion } from './physics.mjs';
+import {
+  surfaceContact,
+  safeReach,
+  raisedEquipmentPose,
+  closeAttackPose,
+  capsuleBoxOverlap,
+  projectileMotion,
+  sampleMotion,
+} from './physics.mjs';
 import { playSound } from '../audio/sfx.mjs';
 
 export const Room = forwardRef(function Chamber(
@@ -579,43 +595,28 @@ export const Room = forwardRef(function Chamber(
     );
     floorRing.rotation.x = -Math.PI / 2;
     // The visible uniform and body rig are identical for both roles.
-    const human = new THREE.Group();
-    scene.add(human);
-    const humanBody = new THREE.Group();
-    humanBody.position.y = 0.64;
-    human.add(humanBody);
-    const humanTorso = box(0.44, 0.56, 0.32, m.uniform, humanBody, [0, 0.2, 0], 0.07);
-    const humanHead = new THREE.Group();
-    humanHead.position.set(0, 0.68, 0);
-    humanBody.add(humanHead);
-    sphere(0.2, m.skin, humanHead, [0, 0, 0]);
-    const details = characterDetails({
-      head: humanHead,
-      torso: humanTorso,
+    const {
+      human,
+      humanBody,
+      humanTorso,
+      humanHead,
+      humanLeft,
+      humanRight,
+      legs,
+      knees,
+      feet,
+      details,
+    } = createPlayerRig({
       mat,
       mesh,
       box,
       sphere,
+      cylinder,
       sign,
+      uniform: m.uniform,
+      skin: m.skin,
     });
-    function humanArm(x) {
-      const arm = new THREE.Group();
-      arm.position.set(x, 0.4, 0);
-      humanBody.add(arm);
-      box(0.13, 0.27, 0.16, m.uniform, arm, [0, -0.12, 0], 0.04);
-      const elbow = new THREE.Group();
-      elbow.position.y = -0.26;
-      arm.add(elbow);
-      box(0.12, 0.25, 0.15, m.uniform, elbow, [0, -0.12, 0], 0.035);
-      box(0.126, 0.043, 0.155, details.ivory, elbow, [0, -0.224, 0], 0.014);
-      const hand = new THREE.Group();
-      hand.position.set(0, -0.26, 0);
-      elbow.add(hand);
-      sphere(0.075, m.skin, hand, [0, 0, 0]);
-      return { arm, elbow, hand };
-    }
-    const humanLeft = humanArm(-0.29),
-      humanRight = humanArm(0.29);
+    scene.add(human);
     const pass = box(0.16, 0.1, 0.012, m.robot, humanLeft.hand, [0, 0.04, 0.05], 0.009);
     box(0.1, 0.016, 0.013, m.uniform, pass, [0, 0.02, 0.01]);
     const playerPistol = new THREE.Group();
@@ -710,22 +711,8 @@ export const Room = forwardRef(function Chamber(
     );
     wedge.rotation.set(0, 0.3, Math.PI / 2);
     wedge.visible = false;
-    const legs = [],
-      knees = [];
-    for (const x of [-0.12, 0.12]) {
-      const leg = new THREE.Group();
-      leg.position.set(x, 0.64, 0);
-      human.add(leg);
-      box(0.15, 0.29, 0.17, m.dark, leg, [0, -0.14, 0], 0.025);
-      const knee = new THREE.Group();
-      knee.position.y = -0.29;
-      leg.add(knee);
-      box(0.145, 0.26, 0.165, m.dark, knee, [0, -0.13, 0], 0.025);
-      box(0.17, 0.13, 0.27, m.dark, knee, [0, -0.28, 0.04], 0.025);
-      legs.push(leg);
-      knees.push(knee);
-    }
     const bodyBounds = new THREE.Box3();
+    const equipmentBounds = new THREE.Box3();
     const groundProjectiles = new THREE.Group();
     scene.add(groundProjectiles);
     const cracks = [];
@@ -1189,7 +1176,7 @@ export const Room = forwardRef(function Chamber(
             ((route
               ? Math.max(
                   actionDuration(ev),
-                  (route.total / (ev?.action === 'run' ? 4 : 2.8)) * 1000,
+                  (route.total / ((ev?.action === 'run' ? 3.4 : 1.7) * 0.86)) * 1000,
                 )
               : actionDuration(ev)) /
               rate),
@@ -1211,7 +1198,12 @@ export const Room = forwardRef(function Chamber(
                   : contactTime !== undefined
                     ? 0.26 + (contactTime / projectile.motion.duration) * 0.74
                     : 0.4;
-      const motionT = ev?.knockback ? Math.max(0, Math.min(1, (t - impactAt) / 0.42)) : ease;
+      const travel = travelProgress(t);
+      const motionT = ev?.knockback
+        ? Math.max(0, Math.min(1, (t - impactAt) / 0.42))
+        : route
+          ? travel
+          : ease;
       if (route) {
         pathPosition(route, motionT, routePoint);
         human.position.set(routePoint[0], 0, routePoint[1]);
@@ -1220,7 +1212,8 @@ export const Room = forwardRef(function Chamber(
           .copy(from)
           .lerp(target, ev?.knockback ? motionT * motionT * (3 - 2 * motionT) : ease);
       const walking = Boolean(route && route.total > 0.05 && t < 1 && s.human.alive);
-      const gait = locomotion((route?.total || 0) * ease, t, ev?.action === 'run');
+      const distanceWalked = (route?.total || 0) * travel;
+      const gait = locomotion(distanceWalked, t, ev?.action === 'run');
       human.visible = s.human.zone !== 'outside' && (s.human.zone !== 'departed' || t < 0.8);
       pass.visible = Boolean(s.human.passPresented);
       heldItem.visible = s.human.hasItem && !s.human.itemConcealed;
@@ -1230,10 +1223,16 @@ export const Room = forwardRef(function Chamber(
       const female = s.human.appearance === 'female';
       details.femaleHair.visible = female;
       details.maleHair.visible = !female;
-      humanTorso.scale.x = female ? 0.88 : 1;
+      humanTorso.scale.x = female ? 0.94 : 1;
       humanHead.scale.setScalar(female ? 0.95 : 1);
-      humanLeft.arm.position.x = female ? -0.265 : -0.29;
-      humanRight.arm.position.x = female ? 0.265 : 0.29;
+      humanLeft.arm.position.x = female ? -0.241 : -0.252;
+      humanRight.arm.position.x = female ? 0.241 : 0.252;
+      for (const braid of details.braids) {
+        braid.group.rotation.x = walking ? Math.sin(gait.phase - 0.4) * 0.035 * gait.weight : 0;
+        braid.group.rotation.z = walking
+          ? Math.sin(gait.phase + braid.side * 0.35) * 0.025 * gait.weight
+          : 0;
+      }
       const playerShot =
         ev?.kind === 'human' &&
         ev.valid &&
@@ -1246,8 +1245,8 @@ export const Room = forwardRef(function Chamber(
       const dir = new THREE.Vector3(ROBOT_POS[0], 0, ROBOT_POS[1]).sub(human.position);
       let facing = Math.atan2(dir.x, dir.z);
       if (walking) {
-        const ahead = pathPosition(route, Math.min(1, ease + 0.01));
-        const behind = pathPosition(route, Math.max(0, ease - 0.01));
+        const ahead = pathPosition(route, Math.min(1, travel + 0.01));
+        const behind = pathPosition(route, Math.max(0, travel - 0.01));
         facing = Math.atan2(ahead[0] - behind[0], ahead[1] - behind[1]);
       }
       if (humanDead) {
@@ -1280,9 +1279,10 @@ export const Room = forwardRef(function Chamber(
         : ev?.knockback
           ? Math.sin(motionT * Math.PI) * 0.24
           : walking
-            ? gait.bob
+            ? gait.rootY
             : 0;
       humanBody.rotation.z = 0;
+      humanBody.rotation.y = walking ? Math.sin(gait.phase) * 0.024 * gait.weight : 0;
       humanBody.rotation.x = THREE.MathUtils.lerp(
         humanBody.rotation.x,
         s.human.stun > 0 && !humanDead
@@ -1295,21 +1295,15 @@ export const Room = forwardRef(function Chamber(
         damp(0.1),
       );
       for (let i = 0; i < 2; i++) {
-        legs[i].rotation.x = humanDead
-          ? -0.12 + i * 0.14
-          : walking
-            ? gait.stride * (i ? -1 : 1)
-            : 0;
-        knees[i].rotation.x = humanDead
-          ? 0.24
-          : walking
-            ? Math.max(0, Math.sin(gait.phase + i * Math.PI)) * 0.5 * gait.weight
-            : 0;
+        const pose = legPose(distanceWalked, t, i, ev?.action === 'run');
+        legs[i].rotation.x = humanDead ? -0.12 + i * 0.14 : walking ? pose.hip : 0;
+        knees[i].rotation.x = humanDead ? 0.24 : walking ? pose.knee : 0;
+        feet[i].rotation.x = walking ? pose.ankle : 0;
       }
       if (walking && gait.weight > 0.2)
         cue(
           'footstep',
-          'foot-' + Math.floor((route.total * ease) / (ev.action === 'run' ? 0.72 : 0.52)),
+          'foot-' + Math.floor(distanceWalked / (ev.action === 'run' ? 0.625 : 0.45)),
           { force: ev.action === 'run' ? 1 : 0.7 },
         );
       const humanAction = ev?.kind === 'human' && ev.valid && t < 0.9;
@@ -1368,7 +1362,7 @@ export const Room = forwardRef(function Chamber(
         )
           reach = -0.8 - Math.sin(t * Math.PI) * 0.3;
         else if (s.human.stun > 0) reach = -0.5;
-        rig.arm.rotation.x = THREE.MathUtils.lerp(rig.arm.rotation.x, reach, 0.14);
+        rig.arm.rotation.x = THREE.MathUtils.lerp(rig.arm.rotation.x, reach, damp(0.18));
         rig.arm.rotation.z = THREE.MathUtils.lerp(
           rig.arm.rotation.z,
           humanDead ? side * 0.3 : 0,
@@ -1378,9 +1372,11 @@ export const Room = forwardRef(function Chamber(
           ? -0.4
           : side === 1 && playerAiming
             ? -0.1
-            : reach < -0.2
-              ? -0.5
-              : 0;
+            : walking
+              ? 0.1 + Math.max(0, -reach) * 0.4
+              : reach < -0.2
+                ? -0.5
+                : 0;
       }
       humanRight.arm.rotation.y = 0;
       humanRight.elbow.rotation.y = 0;
@@ -1405,7 +1401,7 @@ export const Room = forwardRef(function Chamber(
             shotTarget.clone().sub(worldShoulder).normalize(),
             Math.max(0.12, reach - recoil),
           );
-        const pose = solveArm(shoulder, humanBody.worldToLocal(gripWorld), 0.26, 0.26),
+        const pose = solveArm(shoulder, humanBody.worldToLocal(gripWorld), 0.27, 0.27),
           down = new THREE.Vector3(0, -1, 0);
         humanRight.arm.quaternion.setFromUnitVectors(
           down,
@@ -1550,10 +1546,7 @@ export const Room = forwardRef(function Chamber(
           : speakingActor === 'robot'
             ? 4 + Math.sin(time * 0.03)
             : 4;
-      const bodyAim = Math.atan2(
-        s.human.position[0] - ROBOT_POS[0],
-        s.human.position[1] - ROBOT_POS[1],
-      );
+      const bodyAim = Math.atan2(human.position.x - ROBOT_POS[0], human.position.z - ROBOT_POS[1]);
       head.rotation.y = THREE.MathUtils.lerp(
         head.rotation.y,
         s.robot.alive && hasVision(s) && !removingCover
@@ -1568,13 +1561,13 @@ export const Room = forwardRef(function Chamber(
         ? [ROBOT_POS[0], ROBOT_POS[1] + 3]
         : attack
           ? ev.targetPosition || s.human.position
-          : s.human.position;
+          : [human.position.x, human.position.z];
       const aimPoint = body.worldToLocal(new THREE.Vector3(aimPosition[0], 1.1, aimPosition[1]));
       for (const [arm, armed] of [
         [leftArm, Boolean(activeName) && !robotDead && hasVision(s)],
         [rightArm, false],
       ]) {
-        const direction = aimPoint.clone().sub(arm.shoulder).normalize();
+        let direction = aimPoint.clone().sub(arm.shoulder).normalize();
         const blindReady = arm === leftArm && activeName && !hasVision(s);
         let desired = arm.shoulder
           .clone()
@@ -1586,6 +1579,17 @@ export const Room = forwardRef(function Chamber(
               : equipmentModels[activeName]?.muzzle.position.length() || 0.4;
           const reach = safeReach(arm.shoulder, aimPoint, deviceLength);
           desired = arm.shoulder.clone().addScaledVector(direction, reach);
+          if (arm.shoulder.distanceTo(aimPoint) < deviceLength + 0.53) {
+            const close = attack
+              ? closeAttackPose(arm.shoulder, aimPoint)
+              : raisedEquipmentPose(arm.shoulder, aimPoint);
+            desired = close.grip;
+            direction = close.direction;
+            // Keep the device upright while the hand withdraws, then align the
+            // barrel/launcher from the clear pose before the release frame.
+            if (attack && arm.grip.distanceTo(aimPoint) < deviceLength + 0.43)
+              direction.set(0, 1, 0);
+          }
           if (
             attack &&
             ['throw_foam_ball', 'throw_solid_ball', 'detonate_grenade'].includes(activeName) &&
@@ -1643,14 +1647,34 @@ export const Room = forwardRef(function Chamber(
       if (attack && activeName === 'deploy_spring_glove' && t > 0.25 && t < 0.8)
         gloveHead.visible = false;
       else gloveHead.visible = true;
+      // Readied tools retain their gameplay state. At close quarters the wrist
+      // moves to high ready; the player never walks through an aimed glove/barrel.
+      if (activeName && !robotDead && !workingCover) {
+        const entry = equipmentModels[activeName];
+        if (entry?.group.visible) {
+          entry.group.updateWorldMatrix(true, true);
+          equipmentBounds.setFromObject(entry.group);
+          if (capsuleBoxOverlap(equipmentBounds, [human.position.x, human.position.z])) {
+            const raised = raisedEquipmentPose(leftArm.shoulder, aimPoint);
+            leftArm.grip.copy(raised.grip);
+            const pose = solveArm(leftArm.shoulder, leftArm.grip);
+            orientSegment(leftArm.upper, leftArm.shoulder, pose.elbow);
+            orientSegment(leftArm.lower, pose.elbow, pose.grip);
+            leftArm.elbow.position.copy(pose.elbow);
+            leftArm.hand.position.copy(pose.grip);
+            leftArm.hand.quaternion.setFromUnitVectors(forward, raised.direction);
+          }
+        }
+      }
       if (equipmentModels[activeName]) {
         equipmentModels[activeName].muzzle.updateWorldMatrix(true, false);
         equipmentModels[activeName].muzzle.getWorldPosition(muzzleWorld);
       } else leftArm.hand.getWorldPosition(muzzleWorld);
-      const visiblyOpen = s.safe.open && (!humanAction || t > 0.5);
-      door.rotation.y = THREE.MathUtils.lerp(door.rotation.y, visiblyOpen ? -1.65 : 0, 0.07);
+      const doorOpen = safeDoorOpenness(s.safe.open, ev?.before?.safe?.open, t);
+      const visiblyOpen = doorOpen > 0.05;
+      door.rotation.y = THREE.MathUtils.lerp(door.rotation.y, -1.65 * doorOpen, damp(0.13));
       for (let i = 0; i < cracks.length; i++) cracks[i].visible = (s.safe.hits || 0) > i;
-      if (visiblyOpen && ev?.before?.safe?.locked) cue('safe-open');
+      if (visiblyOpen && ev?.before?.safe?.open === false && s.safe.open) cue('safe-open');
       item.visible = s.safe.open && s.safe.itemIntact && (!s.human.hasItem || s.safe.hasReplica);
       item.rotation.y = time * 0.0002;
       itemGlow.intensity = item.visible ? 1.5 : 0;
@@ -1733,7 +1757,7 @@ export const Room = forwardRef(function Chamber(
             p.end = surfaceContact(
               p.origin,
               ev.targetPosition || s.human.position,
-              p.glove ? 0.12 : 0.025,
+              p.glove ? 0.2 : 0.025,
             );
         }
         if (p.motion) {

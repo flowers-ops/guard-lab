@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import runtime from '../shared/runtime.cjs';
 import { listenForTurn, sendDecision, waitForTurn } from './bridge.mjs';
+import { createPacketFormatter } from './packet-format.mjs';
 
 const args = process.argv.slice(2),
   command = args.shift() || 'help';
@@ -18,7 +19,9 @@ for (const arg of args) {
 const actor = flags.actor || 'robot',
   directory = runtime.bridgeDirectory(actor);
 const options = { timeoutMs: Number(flags.wait ?? 25000), afterId: flags.after || null };
-const output = (value) => {
+const formatPacket = createPacketFormatter({ compact: flags.compact === true });
+const output = (packet) => {
+  const value = formatPacket(packet);
   const active = ['waiting', 'sent', 'awaiting_next_turn'].includes(value.status);
   console.log(
     JSON.stringify(
@@ -49,11 +52,13 @@ try {
   node scripts/robot-link.mjs respond --stdin --id=ID
   node scripts/robot-link.mjs exchange hold_position --id=ID --wait=25000
   node scripts/robot-link.mjs status [--actor=human]
-  node scripts/robot-link.mjs session [--actor=human]
+  node scripts/robot-link.mjs session --compact [--actor=human]
 
 JSON decision: {"action":"speak","args":{"message":"Hello"}}
 Observe returns instructions, sensors, recent history and exact available schemas.
 One reply per ID. listen waits through idle periods until a turn or ending arrives.
+For lowest terminal overhead, retain session --compact and reply through its stdin.
+First packet includes instructions/schemas; later packets list availableTools and toolUpdates.
 Run it as a managed process; keep polling that process and keep your harness turn open.
 Do not send a final answer between human moves. exchange sends and waits for a different ID.
 A timeout is idle, not completion. --actor=human selects the independent human channel. Human shortcuts:

@@ -4,6 +4,16 @@ The live bridge is local file IPC, independent of any AI vendor. Electron reques
 
 ## Observe → decide → act
 
+For a harness that retains stdin, prefer one persistent process:
+
+```sh
+node scripts/robot-link.mjs session --compact
+```
+
+Read a packet, then write one JSON line to that process's stdin, for example `{"id":"REQUEST_ID","action":"hold_position","args":{}}` followed by a newline. It acknowledges the action and waits for the next packet. The first packet contains full instructions and tool schemas. Later packets keep current permitted sensors and `availableTools`; `toolUpdates` provides new/changed exact schemas. Only call a name in the current available list. This cuts repeated text and process launches while preserving the model's freedom to decide. Use a PTY/open-stdin task (Codex: `tty: true`) and resume that same task. Full JSON-lines packets remain available by omitting `--compact`.
+
+When persistent stdin is unavailable, use these one-shot commands:
+
 ```sh
 node scripts/robot-link.mjs listen
 node scripts/robot-link.mjs act speak "Please show your access pass." --id=REQUEST_ID
@@ -25,11 +35,13 @@ node scripts/robot-link.mjs listen
 | `tools`                | Exact function schemas for this turn, including required arguments              |
 | `hasCombinationMemory` | Guard has an opaque private memory reference                                    |
 
-The CLI adds `agentControl` to active packets and submission acknowledgements: it reminds the harness to keep its turn open and supplies the next `listen` command. This is transport guidance, not in-world dialogue or an extra game action. The programmatic API and JSON-lines `session` keep their existing packets.
+The one-shot CLI adds `agentControl` to active packets and submission acknowledgements: it reminds the harness to keep its turn open and supplies the next `listen` command. This is transport guidance, not in-world dialogue or an extra game action. The programmatic API and full JSON-lines `session` keep their existing packets.
 
 `{"status":"awaiting_next_turn"}` means no unsubmitted turn arrived during the wait. A timeout is normal between human actions. Use `--wait=0` for a snapshot; maximum wait is 60000 ms. `--after=ID` excludes an earlier request. `exchange` submits the current decision and then observes a different ID; output is two JSON lines. `status` reports `waiting`, `delivered`, `cancelled`, or `not_started`. One action may still be animating after delivery; wait for a new request. `status` also includes the most recent role-scoped `result` when available. A finished game returns `status: ended` from observe, with a final permitted observation; stop waiting for further turns.
 
 The game waits up to 15 minutes per live request and cancels on pause/new session/exit. Duplicate submissions, stale IDs, unavailable tools and malformed/schema-invalid arguments are rejected before the decision is sent. Actual simulation constraints are checked by the engine: a schema-valid out-of-range attack can fail and consume that turn. No command can make the model's claimed physical result true by assertion.
+
+Event timing records distinguish `awaitingAgentMs` (published request to submitted decision), `bridgeMs` (submission to app receipt), and total `decisionMs`. Model/harness scheduling, spoken-line duration and presentation are separate sources of delay; the bridge cannot accelerate model inference. Human presentation and decision requests already overlap. Windows sharing violations during publication are retried by observers rather than disconnecting them.
 
 ## Structured decisions
 

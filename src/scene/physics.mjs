@@ -25,7 +25,25 @@ export function surfaceContact(origin, center, projectileRadius = 0.04) {
   return aim.addScaledVector(direction, -(0.29 + projectileRadius + 0.025));
 }
 export function safeReach(shoulder, aim, deviceLength) {
-  return Math.max(0.12, Math.min(0.63, shoulder.distanceTo(aim) - 0.33 - deviceLength - 0.06));
+  return Math.max(0, Math.min(0.63, shoulder.distanceTo(aim) - 0.33 - deviceLength - 0.08));
+}
+export function raisedEquipmentPose(shoulder, aim) {
+  return {
+    grip: shoulder.clone().add(new Vector3(-0.12, 0.69, aim.z >= shoulder.z ? -0.12 : 0.12)),
+    direction: new Vector3(0, 1, 0),
+  };
+}
+export function closeAttackPose(shoulder, aim) {
+  const grip = shoulder.clone().add(new Vector3(-0.04, -0.2, aim.z >= shoulder.z ? -0.65 : 0.65));
+  return { grip, direction: aim.clone().sub(grip).normalize() };
+}
+// Conservative world-space clearance for an attached prop against the human's
+// body capsule. This also catches an old wrist pose during a damped transition.
+export function capsuleBoxOverlap(box, center, radius = 0.31) {
+  const x = Math.max(box.min.x, Math.min(box.max.x, center[0]));
+  const z = Math.max(box.min.z, Math.min(box.max.z, center[1]));
+  const yGap = box.min.y > 1.42 ? box.min.y - 1.42 : box.max.y < 0.35 ? 0.35 - box.max.y : 0;
+  return (x - center[0]) ** 2 + (z - center[1]) ** 2 + yGap * yGap < radius * radius;
 }
 export function projectileMotion(
   origin,
