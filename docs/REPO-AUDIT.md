@@ -14,6 +14,8 @@ This review began with a fresh clone of the public repository and fresh download
 
 The review exercised the public desktop packaging workflow. macOS and Linux created their packages but failed because electron-builder implicitly attempted publication without a token. The build command now specifies `--publish never`; build jobs upload their artifacts separately. Windows and macOS additionally exercise the renderer and actor bridges through the desktop smoke test.
 
+That macOS smoke run exposed a test path check that compared a canonical temporary directory with its symlink alias. The check now canonicalizes both paths; it still verifies containment and removes only its own temporary directory.
+
 ## Privacy interpretation
 
 Local machine/account data is excluded from the published source and application payload. Generic loopback URLs, upstream dependency attribution, and RFC private-network examples inside the bundled Electron/Node runtime do not identify the originating machine. Build/release timestamps are ordinary publication metadata, not an embedded personal home path or account token.

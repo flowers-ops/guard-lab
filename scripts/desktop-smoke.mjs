@@ -7,7 +7,8 @@ import { createRequire } from 'node:module';
 import { once } from 'node:events';
 import { ROOT } from './paths.mjs';
 const require = createRequire(import.meta.url);
-const temporaryRoot = path.resolve(os.tmpdir());
+// macOS may expose the same temp directory through /var and /private/var.
+const temporaryRoot = await fs.realpath(os.tmpdir());
 const data = await temporaryDirectory('guard-desktop-smoke-');
 const relative = path.relative(temporaryRoot, data);
 if (relative.startsWith('..') || path.isAbsolute(relative))
