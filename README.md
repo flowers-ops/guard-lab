@@ -12,9 +12,11 @@ Cross the room, earn the guard’s trust, talk your way into the safe, or try to
 
 ### Let your AI install and play
 
+[Download the latest release](https://github.com/flowers-ops/guard-lab/releases/latest), or clone `main` for the latest source. Existing installations do not update automatically: update your checkout or download the latest release again.
+
 Paste this repository’s URL into your terminal agent, followed by:
 
-> Clone this repository and read AGENTS.md. Install and set up Guard Lab on this computer. If we are using the Codex live bridge, stop after setup, before launching the game, and remind me to switch to Luna with Medium or High reasoning. When I ask you to start, play the robot while I play the human. Use only your role’s observations. Keep your turn active during play: listen, take one action, then listen again until the encounter ends or I stop you.
+> Get the latest main branch of this repository and read AGENTS.md. Install and set up Guard Lab on this computer. If we are using the Codex live bridge, stop after setup, before launching the game, and remind me to switch to Luna with Medium or High reasoning. When I ask you to start, play the robot while I play the human. Use only your role’s observations. Keep your turn active during play: listen, take one action, then listen again until the encounter ends or I stop you.
 
 The agent needs terminal access and a graphical desktop. Node.js 22+ and npm are required; setup installs the locked dependencies, and the app automatically downloads missing English voices. The live bridge needs no separate API key. Local models must be installed separately; direct API connections require a tool-capable chat-completions endpoint. Other API formats can be added with an adapter.
 
