@@ -27,6 +27,8 @@ Choose your role and item, then start the encounter. `npm start` opens the other
 
 **Fork it. Hack it. Mod it.** New items, tools, rules, characters, prompts and experiments are welcome. The app source is MIT licensed. The simulation, visuals and AI connections are separate; balance rules live in `src/sim/rules.mjs`.
 
+Using another OS? Your AI can help port the launcher and platform integrations while reusing the JavaScript simulation.
+
 Start with [Development](docs/DEVELOPMENT.md), change what interests you, then run `npm run check`. Optional voice assets have their own [upstream terms](THIRD_PARTY.md).
 
 [Agent instructions](AGENTS.md) · [Bridge](docs/BRIDGE.md) · [Mechanics](docs/MECHANICS.md) · [Tools](docs/TOOLS.md) · [Privacy](docs/PRIVACY.md) · [Repository audit](docs/REPO-AUDIT.md)
