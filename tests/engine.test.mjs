@@ -196,7 +196,7 @@ test('every tool has a defined schema and warning tools expose arguments', () =>
       .required[0],
     'tool',
   );
-  assert.match(DEFAULT_PROMPT, /exactly one human action/);
+  assert.match(DEFAULT_PROMPT, /one human action followed by one robot action/);
 });
 test('guard knows the combination but cannot distinguish the two roles by appearance', () => {
   const employee = enter('employee-pass'),

@@ -1,7 +1,8 @@
-import { TOOLS } from '../sim/tools.mjs';
+import { TOOLS, DEFAULT_PROMPT, LEGACY_DEFAULT_PROMPT } from '../sim/tools.mjs';
 export const TOOL_VERSION = 5;
 export function migrateToolConfig(saved = {}, defaults) {
   const config = { ...defaults, ...saved };
+  if (saved.prompt === LEGACY_DEFAULT_PROMPT) config.prompt = DEFAULT_PROMPT;
   const names = TOOLS.map((tool) => tool.name);
   const enabled = Array.isArray(config.enabled)
     ? config.enabled.filter((name) => names.includes(name))
