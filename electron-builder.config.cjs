@@ -14,7 +14,9 @@ const files = [
   'package.json',
   'LICENSE',
   'THIRD_PARTY.md',
-  'docs/*-LICENSE.md',
+  // electron-builder's glob treats '*' as one path segment; use an explicit docs tree glob
+  // so license files (including their .md suffix) land in every desktop package.
+  'docs/**/*-LICENSE.md',
   // Browser builds, sources and maps the Node speech runtime never loads.
   '!node_modules/onnxruntime-web/**',
   '!node_modules/@huggingface/transformers/{src,types}/**',
