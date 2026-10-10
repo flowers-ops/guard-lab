@@ -7,9 +7,19 @@ test('speech selection never falls back to a German/default voice', () => {
   const male = { name: 'David', lang: 'en-US' };
   const female = { name: 'Zira', lang: 'en-US' };
   assert.equal(selectEnglishVoice([german], 'native:Anna', 'robot'), null);
+  assert.equal(selectEnglishVoice([german, male, female], 'kokoro:am_michael', 'human'), male);
+  assert.equal(selectEnglishVoice([german, male, female], 'kokoro:af_heart', 'human'), female);
+  assert.equal(selectEnglishVoice([german, male, female], 'kokoro:bm_george', 'robot'), male);
+  assert.equal(selectEnglishVoice([german, male, female], undefined, 'robot'), male);
+  assert.equal(selectEnglishVoice([german, male], 'native:Anna', 'human'), male);
+  assert.equal(
+    selectEnglishVoice([german, male, female], 'native:Zira', 'robot'),
+    female,
+    'an explicit system voice wins',
+  );
+  // Saved settings from the Piper era keep their voice gender.
   assert.equal(selectEnglishVoice([german, male, female], 'piper:ryan', 'human'), male);
   assert.equal(selectEnglishVoice([german, male, female], 'piper:lessac', 'robot'), female);
-  assert.equal(selectEnglishVoice([german, male], 'native:Anna', 'human'), male);
   assert.equal(
     selectEnglishVoice([{ name: 'English', lang: 'en' }], null, 'human').name,
     'English',
@@ -28,8 +38,8 @@ test('missing English voices produce an actionable error without speaking', asyn
   };
   try {
     await assert.rejects(
-      nativeSpeech('Hello.', 'piper:lessac', 'robot'),
-      /No English system voice/,
+      nativeSpeech('Hello.', 'kokoro:bm_george', 'robot'),
+      /No English system voice.*Kokoro/,
     );
     assert.equal(spoken, false);
   } finally {

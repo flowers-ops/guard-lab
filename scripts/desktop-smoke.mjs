@@ -16,7 +16,6 @@ if (relative.startsWith('..') || path.isAbsolute(relative))
 const env = {
   ...process.env,
   GUARD_LAB_DATA_DIR: data,
-  GUARD_LAB_VOICES: path.join(data, 'no-voices'),
 };
 delete env.ELECTRON_RUN_AS_NODE;
 delete env.GUARD_LAB_BRIDGE;

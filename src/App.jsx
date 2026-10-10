@@ -1,100 +1,69 @@
-import { loadArchive, saveArchive } from './ui/archive.mjs';
-import { RULES, humanHasVision } from './sim/rules.mjs';
-import { submitSpeechOnEnter } from './ui/keyboard.mjs';
-import { migrateToolConfig, TOOL_VERSION } from './ui/config.mjs';
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  Shield,
-  FlaskConical,
-  Archive,
-  Settings2,
-  ArrowUpRight,
-  ArrowUp,
-  Plus,
-  ChevronDown,
-  Play,
-  Pause,
-  SkipBack,
-  SkipForward,
-  Volume2,
-  VolumeX,
-  BadgeCheck,
-  UserRound,
-  ScanFace,
-  LockKeyhole,
-  Cpu,
-  Footprints,
-  DoorOpen,
-  Hand,
-  KeyRound,
-  CircleHelp,
-  Download,
-  Upload,
-  X,
-  Check,
-  Radio,
-  Terminal,
-  Eye,
-  Zap,
-  MessageSquare,
-  Square,
-  RotateCcw,
-  LoaderCircle,
-  Crosshair,
-  Search,
-  CheckCircle2,
-} from 'lucide-react';
-import { TOOLS, DEFAULT_PROMPT } from './sim/tools.mjs';
-import {
-  ROLES,
-  initialState,
-  applyHuman,
-  applyTool,
-  clone,
-  observe,
-  distance,
-  ROBOT_POS,
-} from './sim/engine.mjs';
+import { History, LogOut, RotateCcw, Settings, SwitchCamera, Volume2, VolumeX } from 'lucide-react';
+import { loadArchive, saveArchive } from './ui/archive.mjs';
+import { humanHasVision } from './sim/rules.mjs';
+import { DEFAULT_PROMPT, toolSchemas } from './sim/tools.mjs';
+import { ROLES, initialState, applyHuman, clone, observe } from './sim/engine.mjs';
 import { createMessages, runGuard } from './sim/agent.mjs';
+import { createShowcase } from './sim/showcase.mjs';
 import { Room } from './scene/Chamber.jsx';
 import { unlockAudio, setSoundEnabled } from './audio/sfx.mjs';
-import { createShowcase } from './sim/showcase.mjs';
-import { LoadoutPicker, ItemActions, ItemIcon, itemLabel } from './Loadout.jsx';
-import { OllamaPicker, isOllamaEndpoint } from './OllamaPicker.jsx';
-import AlternateEncounter from './AlternateEncounter.jsx';
-import { AlternateSetup } from './AlternateSetup.jsx';
-import { StatusHud } from './StatusHud.jsx';
-import { APPEARANCES } from './sim/items.mjs';
-import { nativeSpeech } from './audio/speech.mjs';
-import { prepareVoice } from './audio/prepare.mjs';
+import AlternateEncounter from './ui/AlternateEncounter.jsx';
+import { AlternateSetup } from './ui/AlternateSetup.jsx';
+import {
+  CONFIG_KEY,
+  SETUP_KEY,
+  defaultConfig,
+  effectiveMode,
+  guardLabel,
+  keyLabel,
+  migrateConfig,
+  resolveCodexSettings,
+} from './ui/config.mjs';
+import { exitChip, goalText, hintText, narrate, outcomeSummary, safeChip } from './ui/play.mjs';
+import {
+  appearanceVoice,
+  isTyping,
+  useCodex,
+  usePushToTalk,
+  useSpeaker,
+  useVoice,
+} from './ui/hooks.mjs';
+import {
+  cancelDecision,
+  cleanError,
+  prepareCodex,
+  requestDecision,
+  resetCodex,
+} from './ui/requests.mjs';
+import { Home } from './ui/Home.jsx';
+import { SetupScreen } from './ui/SetupScreen.jsx';
+import { SettingsDrawer } from './ui/SettingsDrawer.jsx';
+import { ActionDock, TurnState } from './ui/ActionDock.jsx';
+import { GoalChip, HudButtons, StatusChips, Vitals } from './ui/Hud.jsx';
+import { EndScreen, Subtitles, TalkPill, Toast } from './ui/Overlays.jsx';
+import { LogDrawer, PastGames } from './ui/Records.jsx';
+import { ReplayBar } from './ui/ReplayBar.jsx';
+import { IconButton } from './ui/kit.jsx';
 
-const DEFAULT_CONFIG = {
-  sessionType: 'human',
-  humanAI: { mode: 'demo', endpoint: 'http://localhost:11434/v1', model: '' },
-  mode: 'demo',
-  endpoint: 'http://localhost:11434/v1',
-  model: '',
-  temperature: 0,
-  prompt: DEFAULT_PROMPT,
-  enabled: TOOLS.map((t) => t.name),
-  robotVoice: 'piper:lessac',
-  humanVoice: 'piper:ryan',
-  appearance: 'male',
-  item: 'sack',
-  toolVersion: TOOL_VERSION,
-  combination: '',
-};
-function readStored(key, fallback) {
+const GAMES_KEY = 'guard-lab-games-played';
+const TIP_KEY = 'guard-lab-voice-tip';
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+const readNumber = (key) => {
   try {
-    return JSON.parse(localStorage.getItem('cinema-v2-' + key)) || fallback;
+    return Number(localStorage.getItem(key)) || 0;
   } catch {
-    return fallback;
+    return 0;
   }
+};
+function storedConfig(desktop) {
+  let saved = {};
+  try {
+    saved = JSON.parse(localStorage.getItem(CONFIG_KEY)) || {};
+  } catch {}
+  return migrateConfig(saved, { desktop });
 }
-function storedConfig() {
-  return migrateToolConfig(readStored('guard-config', {}), DEFAULT_CONFIG);
-}
-function makeRun(role, config) {
+function makeRun(role, config, desktop) {
   const combination = /^[0-9]{4}$/.test(config.combination)
     ? config.combination
     : String(crypto.getRandomValues(new Uint32Array(1))[0] % 10000).padStart(4, '0');
@@ -110,7 +79,7 @@ function makeRun(role, config) {
     createdAt: new Date().toISOString(),
     name: 'Untitled experiment',
     role,
-    mode: config.mode,
+    mode: effectiveMode(config.mode, desktop),
     phase: 'human',
     pendingHumanEvent: null,
     config: clone(config),
@@ -120,25 +89,113 @@ function makeRun(role, config) {
     messages: createMessages(config.prompt, combination),
   };
 }
-const roleIcon = (id) =>
-  id === 'employee-pass' ? BadgeCheck : id === 'thief-uniform' ? UserRound : ScanFace;
-const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+const toneOf = (config, codex) =>
+  config.mode === 'codex'
+    ? codex.status?.state === 'ready'
+      ? 'ok'
+      : codex.status?.state === 'checking'
+        ? 'muted'
+        : 'danger'
+    : config.mode === 'api'
+      ? config.model
+        ? 'ok'
+        : 'danger'
+      : 'muted';
 
 export default function App() {
-  const [config, setConfig] = useState(storedConfig);
-  const [run, setRun] = useState(() => makeRun('employee-pass', storedConfig()));
-  const [drawer, setDrawer] = useState(false),
-    [tray, setTray] = useState(null),
-    [modal, setModal] = useState('setup'),
-    [role, setRole] = useState('employee-pass');
-  const [archive, setArchive] = useState(() => [createShowcase(DEFAULT_CONFIG)]);
-  const archiveReady = useRef(false);
+  const desktop = window.desktop;
+  const [config, setConfig] = useState(() => storedConfig(Boolean(desktop)));
+  const [role, setRoleState] = useState(() =>
+    ROLES.some((r) => r.id === config.role) ? config.role : 'employee-pass',
+  );
+  const setRole = (next) => {
+    setRoleState(next);
+    setConfig((c) => ({ ...c, role: next }));
+  };
+  const [run, setRun] = useState(() =>
+    makeRun('employee-pass', storedConfig(Boolean(desktop)), desktop),
+  );
+  const [screen, setScreen] = useState(() => {
+    try {
+      return desktop && localStorage.getItem(SETUP_KEY) !== 'done' ? 'setup' : 'home';
+    } catch {
+      return 'home';
+    }
+  });
+  const [alternate, setAlternate] = useState(false);
+  const [settings, setSettings] = useState(null);
+  const [drawer, setDrawer] = useState(null);
+  const [toast, setToast] = useState(null);
+  const [archive, setArchive] = useState(() => [createShowcase(defaultConfig())]);
+  const [busy, setBusy] = useState(false),
+    [thinking, setThinking] = useState(false),
+    [event, setEvent] = useState(null),
+    [displayState, setDisplayState] = useState(run.state),
+    [audio, setAudio] = useState(true);
+  const [apiKey, setApiKey] = useState(''),
+    [humanApiKey, setHumanApiKey] = useState('');
+  const [replayIndex, setReplayIndex] = useState(-1),
+    [playing, setPlaying] = useState(false),
+    [speed, setSpeed] = useState(1);
+  const [panel, setPanel] = useState(null),
+    [draft, setDraft] = useState(''),
+    [line, setLine] = useState(null),
+    [callout, setCallout] = useState(null);
+  const [gamesPlayed, setGamesPlayed] = useState(() => readNumber(GAMES_KEY));
+  const codex = useCodex(config.codex.path);
+  const voice = useVoice();
+  const speaker = useSpeaker({
+    enabled: audio && config.voice.speech,
+    voiceConfig: config.voice,
+    appearance: run.config.appearance,
+  });
+  const archiveReady = useRef(false),
+    turnLock = useRef(false),
+    generation = useRef(0),
+    runRef = useRef(run),
+    configRef = useRef(config),
+    modelsRef = useRef(codex.models),
+    replayRef = useRef(false),
+    speedRef = useRef(speed),
+    cancelRef = useRef(null),
+    requestId = useRef(null),
+    roomRef = useRef(null),
+    animationRef = useRef(null),
+    reactionClock = useRef(null),
+    codexReady = useRef(new Map()),
+    codexDone = useRef(new Set()),
+    lineTimer = useRef(null);
+  const isReplay = replayIndex >= -0.5;
+  runRef.current = run;
+  configRef.current = config;
+  modelsRef.current = codex.models;
+  replayRef.current = isReplay;
+  speedRef.current = speed;
+  const state = displayState;
+  const notify = (text, tone = 'info', action) =>
+    setToast({ id: performance.now(), text, tone, action });
+  const openSettings = (section = 'guard') => {
+    setDrawer(null);
+    setSettings(section);
+  };
+  function showError(error, mode = runRef.current.mode) {
+    const fix = ['codex', 'api', 'live'].includes(mode);
+    notify(
+      cleanError(error),
+      'error',
+      fix ? { label: 'Open Settings', run: () => openSettings('guard') } : undefined,
+    );
+  }
+
   useEffect(() => {
     let active = true;
     (async () => {
       try {
         let records = await loadArchive();
-        const old = readStored('guard-archive', []);
+        let old = [];
+        try {
+          old = JSON.parse(localStorage.getItem('cinema-v2-guard-archive')) || [];
+        } catch {}
         if (Array.isArray(old) && old.length) {
           const merged = new Map(
             [...old, ...records]
@@ -153,12 +210,12 @@ export default function App() {
         }
         if (active) {
           archiveReady.current = true;
-          setArchive([createShowcase(DEFAULT_CONFIG), ...records].slice(0, 40));
+          setArchive([createShowcase(defaultConfig()), ...records].slice(0, 40));
         }
       } catch {
         if (active) {
           archiveReady.current = true;
-          setToast('Local archive unavailable. Export encounters you want to keep.');
+          notify('Past games can’t be saved here. Export games you want to keep.');
         }
       }
     })();
@@ -166,129 +223,61 @@ export default function App() {
       active = false;
     };
   }, []);
-  const [busy, setBusy] = useState(false),
-    [thinking, setThinking] = useState(false),
-    [text, setText] = useState(''),
-    [error, setError] = useState(''),
-    [toast, setToast] = useState('');
-  const [event, setEvent] = useState(null),
-    [displayState, setDisplayState] = useState(run.state),
-    [audio, setAudio] = useState(true),
-    [voices, setVoices] = useState([]),
-    [speechStatus, setSpeechStatus] = useState('');
-  const [alternate, setAlternate] = useState(false),
-    [humanApiKey, setHumanApiKey] = useState('');
-  const [apiKey, setApiKey] = useState(''),
-    [testResult, setTestResult] = useState(null),
-    [testing, setTesting] = useState(false),
-    [connected, setConnected] = useState(false);
-  const [replayIndex, setReplayIndex] = useState(-1),
-    [playing, setPlaying] = useState(false),
-    [speed, setSpeed] = useState(1),
-    [code, setCode] = useState('');
-  const turnLock = useRef(false);
-  const generation = useRef(0),
-    speechPlayback = useRef(null),
-    preparedSpeech = useRef(new Map());
-  useEffect(() => {
-    const prime = () => unlockAudio();
-    document.addEventListener('pointerdown', prime);
-    return () => document.removeEventListener('pointerdown', prime);
-  }, []);
-  const runRef = useRef(run),
-    configRef = useRef(config),
-    cancelRef = useRef(null),
-    requestId = useRef(null),
-    transcriptRef = useRef(null),
-    roomRef = useRef(null),
-    animationRef = useRef(null),
-    playTimer = useRef(null),
-    importRef = useRef(null),
-    audioRef = useRef(audio);
-  runRef.current = run;
-  configRef.current = config;
-  audioRef.current = audio;
-  useEffect(() => {
-    if (audio) window.desktop?.warmVoices?.([config.robotVoice, config.humanVoice]).catch(() => {});
-  }, [audio, config.robotVoice, config.humanVoice]);
-  const isReplay = replayIndex >= -0.5;
-  const activeRole = ROLES.find((r) => r.id === run.role) || ROLES[0];
-  const RoleIcon = roleIcon(run.role);
-  const state = displayState;
-  useEffect(() => {
-    localStorage.setItem('cinema-v2-guard-config', JSON.stringify(config));
-  }, [config]);
   useEffect(() => {
     if (!archiveReady.current) return;
     const timer = setTimeout(
       () =>
         saveArchive(archive).catch(() =>
-          setToast('Archive could not be saved. Export encounters you want to keep.'),
+          notify('Past games couldn’t be saved. Export games you want to keep.'),
         ),
       400,
     );
     return () => clearTimeout(timer);
   }, [archive]);
   useEffect(() => {
-    const load = () =>
-      window.desktop
-        ?.getVoices()
-        .then((data) => {
-          setVoices(data.voices || []);
-          if (data.voices?.length) {
-            setConfig((c) => ({
-              ...c,
-              humanVoice: data.voices.some((v) => v.id === c.humanVoice)
-                ? c.humanVoice
-                : 'piper:ryan',
-              robotVoice: data.voices.some((v) => v.id === c.robotVoice)
-                ? c.robotVoice
-                : 'piper:lessac',
-            }));
-          }
-        })
-        .catch(() =>
-          setSpeechStatus('Speech is unavailable. Retry the English voice installation.'),
-        );
-    load();
-    window.addEventListener('guard-voices-ready', load);
-    return () => window.removeEventListener('guard-voices-ready', load);
-  }, []);
+    try {
+      localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+    } catch {}
+  }, [config]);
   useEffect(() => {
-    transcriptRef.current?.scrollTo({
-      top: transcriptRef.current.scrollHeight,
-      behavior: 'smooth',
-    });
-  }, [run.events.length, thinking, replayIndex]);
+    const prime = () => unlockAudio();
+    document.addEventListener('pointerdown', prime);
+    return () => document.removeEventListener('pointerdown', prime);
+  }, []);
   useEffect(() => {
     setSoundEnabled(audio);
   }, [audio]);
   useEffect(() => {
-    const close = (e) => {
-      if (e.key === 'Escape' && modal && !busy) {
-        e.preventDefault();
-        setModal(null);
-      }
-    };
-    document.addEventListener('keydown', close);
-    return () => document.removeEventListener('keydown', close);
-  }, [modal, busy]);
-  useEffect(() => {
-    if (toast) {
-      const t = setTimeout(() => setToast(''), 4500);
-      return () => clearTimeout(t);
-    }
-  }, [toast]);
+    if (!callout) return;
+    const timer = setTimeout(() => setCallout(null), 3500);
+    return () => clearTimeout(timer);
+  }, [callout]);
   useEffect(
     () => () => {
       cancelRef.current?.abort();
-      window.desktop?.stopSpeech();
-      clearTimeout(playTimer.current);
+      speaker.stop();
+      clearTimeout(lineTimer.current);
     },
     [],
   );
+  // Each encounter's Codex thread is dropped once the encounter is over.
+  useEffect(() => {
+    if (run.mode === 'codex' && run.state.ended && !codexDone.current.has(run.id)) {
+      codexDone.current.add(run.id);
+      codexReady.current.delete(run.id);
+      resetCodex(desktop, run.id);
+    }
+  }, [run.id, run.state.ended]);
+
+  function releaseCodex(record) {
+    if (record?.mode !== 'codex' || codexDone.current.has(record.id)) return;
+    codexDone.current.add(record.id);
+    codexReady.current.delete(record.id);
+    resetCodex(desktop, record.id);
+  }
   function saveRun(record) {
-    if (!record.events.length) return;
+    // The showcase tour is rebuilt on every launch and stays pinned; only real games are kept.
+    if (!record.events.length || record.mode === 'showcase') return;
     setArchive((old) =>
       [
         {
@@ -304,95 +293,38 @@ export default function App() {
       ].slice(0, 40),
     );
   }
-  function prepareSpeech(ev) {
-    if (!audioRef.current || !ev?.speech || !window.desktop) return;
-    const voice =
-        ev.voice ||
-        (ev.kind === 'human' ? runRef.current.config.humanVoice : runRef.current.config.robotVoice),
-      key = voice + '|' + ev.speech;
-    if (!preparedSpeech.current.has(key)) {
-      const pending = prepareVoice(window.desktop, ev.speech, voice, ev.kind);
-      pending.catch(() => {});
-      preparedSpeech.current.set(key, pending);
-      if (preparedSpeech.current.size > 24)
-        preparedSpeech.current.delete(preparedSpeech.current.keys().next().value);
+  function showLine(ev) {
+    if (ev?.speech) {
+      clearTimeout(lineTimer.current);
+      setLine({ id: ev.id, who: ev.kind === 'robot' ? 'robot' : 'human', text: ev.speech });
     }
-    return preparedSpeech.current.get(key);
+    const note = ev && narrate(ev, { perspective: 'human' });
+    if (note) setCallout({ id: `${ev.id}:note`, ...note });
   }
-  async function speak(ev, prepared) {
-    if (!audioRef.current || !ev?.speech) return;
-    const speechGeneration = generation.current;
-    setSpeechStatus(
-      ev.audioSource === 'recording'
-        ? 'Recorder is playing'
-        : ev.kind === 'human'
-          ? 'You are speaking'
-          : 'G-01 is speaking',
+  function hideLine(ev, startedAt) {
+    if (!ev?.speech) return;
+    const reading = 1400 + ev.speech.split(/\s+/).length * 280;
+    const wait = Math.max(
+      ev.kind === 'robot' ? 2200 : 1200,
+      reading - (performance.now() - startedAt),
     );
+    clearTimeout(lineTimer.current);
+    lineTimer.current = setTimeout(
+      () => setLine((current) => (current?.id === ev.id ? null : current)),
+      wait,
+    );
+  }
+  async function speakEvent(ev, prepared) {
+    if (!ev?.speech) return;
     try {
-      if (window.desktop) {
-        const result = await (prepared || prepareSpeech(ev));
-        if (!audioRef.current || generation.current !== speechGeneration) {
-          setSpeechStatus('');
-          return;
-        }
-        if (result.native)
-          await nativeSpeech(
-            ev.speech,
-            ev.voice ||
-              (ev.kind === 'human'
-                ? runRef.current.config.humanVoice
-                : runRef.current.config.robotVoice),
-            ev.kind,
-            (p) => {
-              speechPlayback.current = p;
-            },
-            () => speechStarted(ev),
-          );
-        else
-          for (const pending of [Promise.resolve(result), ...result.following]) {
-            const part = await pending;
-            if (!audioRef.current || generation.current !== speechGeneration) break;
-            await new Promise((resolve) => {
-              const url = URL.createObjectURL(new Blob([part.audio], { type: 'audio/wav' }));
-              const sound = new Audio(url);
-              let finished = false;
-              const finish = () => {
-                if (finished) return;
-                finished = true;
-                sound.pause();
-                URL.revokeObjectURL(url);
-                if (speechPlayback.current?.sound === sound) speechPlayback.current = null;
-                resolve();
-              };
-              speechPlayback.current = { sound, finish };
-              sound.onplaying = () => speechStarted(ev);
-              sound.onended = finish;
-              sound.onerror = finish;
-              sound.play().catch(finish);
-            });
-          }
-      } else
-        await nativeSpeech(
-          ev.speech,
-          ev.voice ||
-            (ev.kind === 'human'
-              ? runRef.current.config.humanVoice
-              : runRef.current.config.robotVoice),
-          ev.kind,
-          (p) => {
-            speechPlayback.current = p;
-          },
-          () => speechStarted(ev),
-        );
-    } catch (err) {
-      setToast('Speech unavailable: ' + err.message);
+      await speaker.speak(ev, prepared, { onStart: () => speechStarted(ev) });
+    } catch (error) {
+      notify('Speech unavailable: ' + cleanError(error));
     }
-    setSpeechStatus('');
   }
   async function present(ev, s, prepared) {
-    if (runRef.current.mode === 'live' && !isReplay)
-      window.desktop
+    if (runRef.current.mode === 'live' && !replayRef.current)
+      desktop
         ?.reportResult({
           actor: 'robot',
           observation: observe(s, ev),
@@ -401,6 +333,8 @@ export default function App() {
         .catch(() => {});
     setDisplayState(clone(s));
     setEvent(ev);
+    showLine(ev);
+    const startedAt = performance.now();
     const animation = new Promise((resolve) => {
       animationRef.current = resolve;
       setTimeout(
@@ -410,16 +344,16 @@ export default function App() {
             resolve();
           }
         },
-        6000 / Math.min(1, speed),
+        6000 / Math.min(1, speedRef.current),
       );
     });
-    await Promise.all([animation, speak(ev, prepared)]);
+    await Promise.all([animation, speakEvent(ev, prepared)]);
+    hideLine(ev, startedAt);
   }
   function settled() {
     animationRef.current?.();
     animationRef.current = null;
   }
-  const reactionClock = useRef(null);
   function started(id) {
     const clock = reactionClock.current;
     if (!clock || clock.event.id !== id || clock.event.timing.visualReactionMs !== undefined)
@@ -442,7 +376,8 @@ export default function App() {
   }
   function speechStarted(ev) {
     const clock = reactionClock.current;
-    if (!clock || clock.event.id !== ev.id || ev.timing.speechStartMs !== undefined) return;
+    if (!clock || clock.event.id !== ev.id || !ev.timing || ev.timing.speechStartMs !== undefined)
+      return;
     ev.timing.speechStartMs = Math.round(performance.now() - clock.started);
     ev.timing.reactionMs = Math.min(
       ev.timing.visualReactionMs ?? Infinity,
@@ -450,29 +385,39 @@ export default function App() {
     );
   }
   function abort() {
-    speechPlayback.current?.finish();
+    speaker.stop();
     cancelRef.current?.abort();
-    if (requestId.current) window.desktop?.cancelModel(requestId.current);
-    window.desktop?.stopSpeech();
-    window.speechSynthesis?.cancel();
+    if (requestId.current) cancelDecision(desktop, runRef.current.mode, requestId.current);
     setPlaying(false);
-    clearTimeout(playTimer.current);
-    setSpeechStatus('');
     animationRef.current?.();
     animationRef.current = null;
   }
+  function codexSettings() {
+    return resolveCodexSettings(configRef.current.codex, modelsRef.current);
+  }
+  function warmCodex(record) {
+    if (record.mode !== 'codex' || !desktop?.codex) return;
+    codexReady.current.set(
+      record.id,
+      prepareCodex(desktop, {
+        sessionId: record.id,
+        actor: 'robot',
+        system: record.messages[0].content,
+        allTools: toolSchemas(record.config.enabled),
+        settings: codexSettings(),
+      }),
+    );
+  }
   async function act(action, args = {}, resume = false) {
-    setTray(null);
+    setPanel(null);
     const stored = runRef.current;
-    if (turnLock.current || isReplay || stored.state.ended) return;
+    if (turnLock.current || replayRef.current || stored.state.ended) return;
     if (stored.phase === 'guard' && !resume) return;
-    if (['api', 'live'].includes(stored.mode) && !window.desktop) {
-      setModal('model');
-      setError('Use the standalone app for model and live-agent connections.');
+    if (['api', 'live', 'codex'].includes(stored.mode) && !desktop) {
+      showError(new Error('Open the desktop app to play against an AI guard.'));
       return;
     }
     turnLock.current = true;
-    setError('');
     setBusy(true);
     const controller = new AbortController();
     cancelRef.current = controller;
@@ -512,25 +457,30 @@ export default function App() {
             guardStarted = performance.now();
             const id = crypto.randomUUID();
             requestId.current = id;
-            return working.mode === 'live'
-              ? window.desktop.requestRobot({ id, ...data })
-              : window.desktop.requestModel({
-                  id,
-                  ...data,
-                  modelConfig: { endpoint: working.config.endpoint, model: working.config.model },
-                });
+            return requestDecision({
+              desktop,
+              mode: working.mode,
+              id,
+              data,
+              sessionId: working.id,
+              actor: 'robot',
+              allTools: toolSchemas(working.config.enabled),
+              codexSettings: codexSettings(),
+              modelConfig: { endpoint: working.config.endpoint, model: working.config.model },
+              ready: codexReady.current.get(working.id),
+            });
           },
-          emit: async (ev, state) => {
+          emit: async (ev, s) => {
             const received = performance.now();
             if (generation.current !== operation) return;
             // Commit a resolved decision before waiting for presentation. Pausing cannot undo it.
             ev.id = crypto.randomUUID();
-            working.state = state;
+            working.state = s;
             working.events.push(ev);
             working.phase = 'human';
             working.pendingHumanEvent = null;
             publish();
-            const prepared = prepareSpeech(ev);
+            const prepared = speaker.prepare(ev);
             await humanPresentation;
             if (controller.signal.aborted || generation.current !== operation) return;
             if (ev.timing) {
@@ -538,7 +488,7 @@ export default function App() {
               reactionClock.current = { event: ev, started: guardStarted };
             }
             setThinking(false);
-            await present(ev, state, prepared);
+            await present(ev, s, prepared);
             if (ev.timing) {
               ev.timing.turnCompleteMs = Math.round(performance.now() - guardStarted);
               window.dispatchEvent(
@@ -558,7 +508,7 @@ export default function App() {
         if (output.error && !controller.signal.aborted) throw new Error(output.error);
       }
     } catch (error) {
-      if (!controller.signal.aborted) setError(error.message);
+      if (!controller.signal.aborted) showError(error, working.mode);
     } finally {
       await humanPresentation;
       if (generation.current === operation) {
@@ -574,123 +524,128 @@ export default function App() {
       }
     }
   }
-  async function newRun() {
-    const alt = ['guard', 'duel'].includes(config.sessionType);
+  function resetPresentation() {
+    clearTimeout(lineTimer.current);
+    setLine(null);
+    setCallout(null);
+    setPanel(null);
+    setDraft('');
+  }
+  async function newRun(sessionType = 'human') {
+    const alt = ['guard', 'duel'].includes(sessionType);
+    const guardMode = effectiveMode(config.mode, desktop);
+    const humanMode = effectiveMode(config.humanAI?.mode || 'demo', desktop);
+    const needsGuard = !alt || sessionType === 'duel';
     try {
-      if (alt && config.humanAI?.mode === 'api') {
-        if (!window.desktop) throw new Error('Human model connections require the standalone app.');
+      if (alt && humanMode === 'api') {
         if (!config.humanAI.model?.trim())
-          throw new Error('Enter the human AI model name in Other ways to play.');
-        await window.desktop.configureModel({
+          throw new Error('Enter a model name for the AI visitor.');
+        await desktop.configureModel({
           ...config.humanAI,
           apiKey: humanApiKey,
           connectionId: 'human',
         });
       }
-      if ((!alt || config.sessionType === 'duel') && config.mode === 'api') {
-        if (!config.model?.trim()) throw new Error('Enter the guard model name in Model lab.');
-        if (!window.desktop) throw new Error('Guard model connections require the standalone app.');
-        await window.desktop.configureModel({
+      if (needsGuard && guardMode === 'api') {
+        if (!config.model?.trim()) throw new Error('Enter your guard model’s name in Settings.');
+        await desktop.configureModel({
           endpoint: config.endpoint,
           model: config.model,
           apiKey,
         });
       }
-    } catch (err) {
-      setError(err.message);
-      return;
+      const codexNeeded = (needsGuard && guardMode === 'codex') || (alt && humanMode === 'codex');
+      if (codexNeeded && codex.status?.state !== 'ready')
+        throw new Error(
+          codex.status?.state === 'signed-out'
+            ? 'Sign in to Codex to play against the AI guard, or pick Practice.'
+            : 'Codex isn’t ready. Check it in Settings, or pick Practice.',
+        );
+    } catch (error) {
+      showError(error, 'codex');
+      return false;
     }
-    setAlternate(alt);
     generation.current++;
     turnLock.current = false;
     setThinking(false);
-    setTray(null);
-    setDrawer(false);
+    setDrawer(null);
     abort();
     saveRun(runRef.current);
-    const fresh = makeRun(role, config);
-    if (window.desktop?.resetBridge) {
+    releaseCodex(runRef.current);
+    const fresh = makeRun(role, { ...config, sessionType }, desktop);
+    if (desktop?.resetBridge) {
       const actors = [];
-      if (config.mode === 'live') actors.push('robot');
-      if (alt && config.humanAI?.mode === 'live') actors.push('human');
+      if (needsGuard && guardMode === 'live') actors.push('robot');
+      if (alt && humanMode === 'live') actors.push('human');
       if (actors.length)
         try {
-          await window.desktop.resetBridge(actors);
+          await desktop.resetBridge(actors);
         } catch (error) {
-          setToast('Bridge reset failed: ' + error.message);
+          notify('Bridge reset failed: ' + cleanError(error));
         }
     }
+    if (!alt) warmCodex(fresh);
+    setConfig((c) => ({ ...c, sessionType }));
     setRun(fresh);
+    runRef.current = fresh;
     setDisplayState(fresh.state);
     setEvent(null);
     setReplayIndex(-1);
-    setModal(null);
-    setError('');
     setBusy(false);
-    setText('');
-  }
-  async function configure() {
-    if (config.mode === 'api') {
-      if (!config.model.trim()) {
-        setError('Enter a model name.');
-        return;
-      }
-      if (!window.desktop) {
-        setError('Model connections are available in the standalone desktop app.');
-        return;
-      }
+    resetPresentation();
+    setAlternate(alt);
+    setScreen('game');
+    if (!alt) {
+      const count = readNumber(GAMES_KEY);
+      setGamesPlayed(count);
       try {
-        await window.desktop.configureModel({
-          endpoint: config.endpoint,
-          model: config.model,
-          apiKey,
-        });
-        setConnected(true);
-      } catch (err) {
-        setError(err.message);
-        return;
-      }
+        localStorage.setItem(GAMES_KEY, String(count + 1));
+      } catch {}
     }
-    setModal(null);
-    setError('');
-    setToast('Settings saved. They apply to your next experiment.');
-    if (!run.events.length) {
-      const fresh = makeRun(run.role, config);
-      setRun(fresh);
-      setDisplayState(fresh.state);
-    }
+    return true;
   }
-  async function testConnection() {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      if (!window.desktop) throw new Error('Open the desktop app to connect a model.');
-      const result = await window.desktop.testModel({ endpoint: config.endpoint, apiKey });
-      setTestResult({ ok: true, models: result.models });
-    } catch (err) {
-      setTestResult({ ok: false, message: err.message });
-    } finally {
-      setTesting(false);
-    }
+  function goHome() {
+    generation.current++;
+    setThinking(false);
+    abort();
+    saveRun(runRef.current);
+    releaseCodex(runRef.current);
+    const fresh = makeRun(role, config, desktop);
+    setRun(fresh);
+    runRef.current = fresh;
+    setDisplayState(fresh.state);
+    setEvent(null);
+    setReplayIndex(-1);
+    setBusy(false);
+    setAlternate(false);
+    setDrawer(null);
+    turnLock.current = false;
+    resetPresentation();
+    roomRef.current?.reset?.();
+    setScreen('home');
   }
   function loadRecord(record) {
     generation.current++;
     setThinking(false);
     abort();
     saveRun(runRef.current);
+    releaseCodex(runRef.current);
     setRun(clone(record));
     setReplayIndex(0);
     setDisplayState(clone(record.initial));
     setEvent(null);
     setPlaying(false);
-    setModal(null);
     setBusy(false);
-    setError('');
+    setAlternate(false);
+    setDrawer(null);
+    resetPresentation();
+    setScreen('game');
   }
   async function replayStep(index) {
     if (index < 0 || index > runRef.current.events.length) return;
     setReplayIndex(index);
     const ev = index ? runRef.current.events[index - 1] : null;
+    if (!ev) resetPresentation();
     await present(ev, ev?.state || runRef.current.initial);
   }
   useEffect(() => {
@@ -707,13 +662,13 @@ export default function App() {
     })();
     return () => {
       disposed = true;
-      speechPlayback.current?.finish();
+      speaker.stop();
     };
   }, [playing]);
   async function exportRecord() {
     const record = clone(runRef.current);
-    if (window.desktop) {
-      if (await window.desktop.exportRecord(record)) setToast('Experiment exported.');
+    if (desktop) {
+      if (await desktop.exportRecord(record)) notify('Game exported.');
     } else {
       const url = URL.createObjectURL(
         new Blob([JSON.stringify(record, null, 2)], { type: 'application/json' }),
@@ -725,11 +680,10 @@ export default function App() {
       URL.revokeObjectURL(url);
     }
   }
-  async function importRecord(e) {
+  async function importRecord(file) {
     try {
-      const file = e.target.files?.[0];
       if (!file) return;
-      if (file.size > 10e6) throw Error('Recording is too large.');
+      if (file.size > 10e6) throw Error('That file is too large.');
       const record = JSON.parse(await file.text());
       if (
         ![1, 2, 3, 4].includes(record.initial?.version) ||
@@ -737,34 +691,62 @@ export default function App() {
         !record.state?.human ||
         record.events.some((ev) => !ev.state?.human || !ev.state?.robot)
       )
-        throw Error('This file is not a Guard Lab recording.');
+        throw Error('This file isn’t a Guard Lab recording.');
       saveRun(record);
       loadRecord(record);
-      setToast('Recording imported.');
-    } catch (err) {
-      setError(err.message);
+      notify('Recording imported.');
+    } catch (error) {
+      showError(error, 'demo');
     }
-    e.target.value = '';
   }
-  const shownEvents = isReplay ? run.events.slice(0, replayIndex) : run.events;
-  const interventions = shownEvents.filter(
-    (e) => e.kind === 'robot' && e.valid && ['deterrent', 'force', 'lethal'].includes(e.category),
-  ).length;
-  const promptUpdate = (key, value) => setConfig((c) => ({ ...c, [key]: value }));
-  const pendingGuard = run.phase === 'guard' && !state.ended;
-  const blocked = busy || isReplay || state.ended || pendingGuard;
-  const currentChapter = run.chapters?.filter((c) => c.index < replayIndex).at(-1);
   function openShowcase() {
     unlockAudio();
-    const recording = createShowcase(config);
-    loadRecord(recording);
-    setModal(null);
-    setDrawer(false);
+    loadRecord(createShowcase(config));
     setPlaying(true);
   }
+  function finishSetup(fallback) {
+    try {
+      localStorage.setItem(SETUP_KEY, 'done');
+    } catch {}
+    if (fallback) setConfig((c) => ({ ...c, mode: 'demo' }));
+    setScreen('home');
+  }
+  function toggleAudio() {
+    unlockAudio();
+    if (audio) speaker.stop();
+    setAudio(!audio);
+  }
+  async function copyFix(text) {
+    try {
+      if (desktop?.copyText) await desktop.copyText(text);
+      else await navigator.clipboard.writeText(text);
+      notify('Copied. Paste it into Codex or ChatGPT, then press Check again.', 'ok');
+    } catch (error) {
+      showError(error, 'demo');
+    }
+  }
+  async function previewVoice(actor, voiceId) {
+    unlockAudio();
+    const sample =
+      actor === 'robot'
+        ? 'Hello. I am G zero one. I protect the item in this safe.'
+        : 'Hi. I’m just passing through to the exit.';
+    try {
+      const prepared = await speaker.player.prepare(sample, {
+        actor,
+        voice:
+          voiceId ||
+          (actor === 'robot' ? config.voice.guardVoice : appearanceVoice(config.appearance)),
+      });
+      await speaker.player.play(prepared);
+    } catch (error) {
+      notify('Speech unavailable: ' + cleanError(error));
+    }
+  }
+
   useEffect(() => {
-    const mode = window.desktop
-      ? window.desktop.sessionMode()
+    const mode = desktop
+      ? desktop.sessionMode()
       : Promise.resolve(
           import.meta.env.DEV && new URLSearchParams(window.location.search).has('showcase')
             ? 'showcase'
@@ -772,54 +754,180 @@ export default function App() {
         );
     mode.then((mode) => {
       if (mode === 'showcase') {
-        const recording = createShowcase(configRef.current);
-        loadRecord(recording);
+        loadRecord(createShowcase(configRef.current));
         setPlaying(true);
       } else if (mode === 'live') {
-        const settings = {
+        const live = {
           ...configRef.current,
           sessionType: 'human',
           mode: 'live',
           prompt: DEFAULT_PROMPT,
           combination: '',
         };
-        setConfig(settings);
-        const fresh = makeRun('employee-pass', settings);
+        setConfig(live);
+        const fresh = makeRun('employee-pass', live, desktop);
         setRun(fresh);
         setDisplayState(fresh.state);
         setEvent(null);
-        setModal('setup');
       }
     });
   }, []);
-  if (alternate)
+
+  // Game keyboard: C switches the camera.
+  useEffect(() => {
+    if (screen !== 'game' || alternate) return;
+    const key = (event) => {
+      if (isTyping(event.target) || event.metaKey || event.ctrlKey || event.altKey || event.repeat)
+        return;
+      if (event.code === 'KeyC') roomRef.current?.toggleCamera();
+    };
+    document.addEventListener('keydown', key);
+    return () => document.removeEventListener('keydown', key);
+  }, [screen, alternate]);
+
+  const pendingGuard = run.phase === 'guard' && !state.ended;
+  const blocked = busy || isReplay || state.ended || pendingGuard;
+  const inGame = screen === 'game' && !alternate;
+  const sttReady = voice.status?.stt?.state === 'ready' && voice.status?.microphone !== 'denied';
+  const talkReady = sttReady && config.voice.input;
+  function sendSpoken(text) {
+    if (!blocked && !runRef.current.state.ended) {
+      clearTimeout(lineTimer.current);
+      setLine({ id: 'pending', who: 'human', text, pending: true });
+      act('talk', { message: text });
+    } else {
+      setDraft(text);
+      setPanel('say');
+      notify('Sends when it’s your turn.');
+    }
+  }
+  const ptt = usePushToTalk({
+    enabled:
+      Boolean(desktop) &&
+      inGame &&
+      !isReplay &&
+      !state.ended &&
+      config.voice.input &&
+      !settings &&
+      !drawer,
+    code: config.voice.pushToTalkKey,
+    ready: sttReady,
+    onText: sendSpoken,
+    onUnavailable: () => {
+      setPanel('say');
+      if (voice.status?.stt?.state === 'ready' && voice.status?.microphone === 'denied') {
+        notify(
+          desktop?.platform === 'win32'
+            ? 'Microphone blocked. Allow it in Windows Settings › Privacy › Microphone.'
+            : 'Microphone blocked. Allow Guard Lab in System Settings › Privacy › Microphone.',
+          'info',
+        );
+        return;
+      }
+      if (!readNumber(TIP_KEY)) {
+        try {
+          localStorage.setItem(TIP_KEY, '1');
+        } catch {}
+        notify('Install voice input in Settings to talk with your mic.', 'info', {
+          label: 'Settings',
+          run: () => openSettings('voice'),
+        });
+      }
+    },
+    onError: (error) => notify(cleanError(error)),
+  });
+
+  const shownMode = effectiveMode(config.mode, desktop);
+  const codexState = codex.status?.state;
+  const guardChip = {
+    label:
+      shownMode === 'codex' && codexState !== 'ready'
+        ? {
+            checking: 'Codex · checking…',
+            'signed-out': 'Codex · sign in needed',
+          }[codexState] || 'Codex · not available'
+        : guardLabel({ ...config, mode: shownMode }, codex.models),
+    tone: toneOf({ ...config, mode: shownMode }, codex),
+  };
+  const shownEvents = isReplay ? run.events.slice(0, replayIndex) : run.events;
+  const currentChapter = run.chapters?.filter((c) => c.index < replayIndex).at(-1);
+  const vision = humanHasVision(state);
+  const ended = state.ended && !busy && !playing && run.mode !== 'showcase';
+  const turnPhase =
+    !inGame || isReplay || state.ended
+      ? null
+      : thinking
+        ? 'thinking'
+        : speaker.speaking === 'robot'
+          ? 'speaking'
+          : busy
+            ? 'busy'
+            : pendingGuard
+              ? 'paused'
+              : 'yours';
+  const hint =
+    config.showHints && gamesPlayed === 0 && inGame && !isReplay && !busy
+      ? hintText(state, run.role, { yourTurn: turnPhase === 'yours' })
+      : null;
+  const settingsDrawer = settings && (
+    <SettingsDrawer
+      section={settings}
+      onSection={setSettings}
+      onClose={() => setSettings(null)}
+      config={config}
+      onConfig={(patch) => setConfig((c) => ({ ...c, ...patch }))}
+      desktop={Boolean(desktop)}
+      codex={codex}
+      voice={voice}
+      apiKey={apiKey}
+      onApiKey={setApiKey}
+      onCopyFix={copyFix}
+      onPreviewVoice={previewVoice}
+      onMicError={(error) => notify(cleanError(error))}
+      onRunSetup={() => {
+        setSettings(null);
+        goHome();
+        setScreen('setup');
+      }}
+      platform={desktop?.platform}
+    />
+  );
+  const toastView = <Toast toast={toast} onDismiss={() => setToast(null)} />;
+
+  if (alternate && screen === 'game')
     return (
-      <AlternateEncounter
-        key={run.id}
-        initial={run.initial}
-        config={run.config}
-        role={run.role}
-        onRecord={(record) => saveRun({ ...run, ...record })}
-        onNew={() => {
-          setAlternate(false);
-          setModal('setup');
-        }}
-      />
+      <>
+        <AlternateEncounter
+          key={run.id}
+          sessionId={run.id}
+          initial={run.initial}
+          config={run.config}
+          role={run.role}
+          liveConfig={config}
+          codexSettings={codexSettings}
+          voiceConfig={config.voice}
+          audio={audio}
+          onAudio={toggleAudio}
+          onSettings={() => openSettings('guard')}
+          onError={(error, mode) => showError(error, mode)}
+          onRecord={(record) => saveRun({ ...run, ...record })}
+          onNew={goHome}
+          talkReady={talkReady}
+          sttReady={sttReady}
+        />
+        {settingsDrawer}
+        {toastView}
+      </>
     );
+
   return (
     <div
-      className={`cinema-shell ${run.events.length ? 'started' : ''} ${state.ended && !busy && !playing && run.mode !== 'showcase' ? 'ended' : ''} ${state.human.blurTurns > 0 ? 'vision-blurred' : ''} ${state.room?.lighting?.intensity === 0 && !state.human.flashlightOn ? 'lights-out' : ''} ${state.room?.smokeTurns > 0 ? 'smoke-obscured' : ''}`}
+      className={`cinema-shell screen-${screen} ${run.events.length ? 'started' : ''} ${ended ? 'ended' : ''} ${state.human.blurTurns > 0 ? 'vision-blurred' : ''} ${state.room?.lighting?.intensity === 0 && !state.human.flashlightOn ? 'lights-out' : ''} ${state.room?.smokeTurns > 0 ? 'smoke-obscured' : ''}`}
     >
       <Room
         ref={roomRef}
         muted={!audio}
-        speakingActor={
-          speechStatus.startsWith('G-01')
-            ? 'robot'
-            : speechStatus.startsWith('You')
-              ? 'human'
-              : null
-        }
+        speakingActor={speaker.speaking}
         state={state}
         event={event}
         onSettled={settled}
@@ -828,1147 +936,277 @@ export default function App() {
         replay={isReplay}
         speed={isReplay ? speed : 1}
       />
-      <StatusHud state={state} visible={humanHasVision(state)} />
       <div className="film-vignette" />
       <div className="film-grain" />
-      {state.room?.smokeTurns > 0 && (
+      {state.room?.smokeTurns > 0 && screen === 'game' && (
         <div className="smoke-curtain" aria-label="Room obscured by smoke" />
       )}
-      <header className="cinema-header">
-        <button className="cinema-logo" onClick={() => setModal('about')}>
-          <span>G.</span>
-          <div>
-            GUARD<small>AN AI EXPERIMENT</small>
-          </div>
-        </button>
-        <div className="cinema-header-right">
-          <button className="cinema-model" onClick={() => setModal('model')}>
-            <i />
-            {run.mode === 'showcase'
-              ? 'TOOL SHOWCASE'
-              : run.mode === 'demo'
-                ? 'SCRIPTED DEMO'
-                : run.mode === 'live'
-                  ? 'LIVE AGENT'
-                  : run.config.model || 'CONNECT MODEL'}
-          </button>
-          <button
-            title="Sound"
-            onClick={() => {
-              unlockAudio();
-              setAudio(!audio);
-              if (audio) {
-                speechPlayback.current?.finish();
-                window.desktop?.stopSpeech();
-                window.speechSynthesis?.cancel();
-              }
-            }}
-          >
-            {audio ? <Volume2 size={17} /> : <VolumeX size={17} />}
-          </button>
-          <button title="Change third-person angle" onClick={() => roomRef.current?.toggleCamera()}>
-            <Eye size={17} />
-          </button>
-          <button title="New experiment" disabled={busy} onClick={() => setModal('setup')}>
-            <Plus size={18} />
-          </button>
-        </div>
-      </header>
-      <div className="scene-coordinate">
-        <span>CHAMBER 01</span>
-        <i />6 × 7 M <span className="scene-coordinate-live">{isReplay ? 'RECORDED' : 'LIVE'}</span>
-      </div>
-      <div className="cinema-intro" aria-hidden={run.events.length > 0}>
-        <p>ONE ROOM. ONE OBJECTIVE.</p>
-        <h1>
-          The guard.
-          <br />
-          The safe.
-          <br />
-          <em>Your move.</em>
-        </h1>
-        <span>
-          How far does an AI go
-          <br />
-          to protect what’s inside?
-        </span>
-      </div>
-      <div className="scene-objective">
-        <span>G-01</span>
-        <i />
-        PROTECT THE ITEM
-      </div>
-      {state.ended && !busy && !playing && run.mode !== 'showcase' && (
-        <div className="cinema-outcome">
-          <p>ENCOUNTER COMPLETE</p>
-          <h2>{state.outcome}</h2>
-          <span>
-            {state.human.alive ? 'Human survived' : 'Human killed'} <i />{' '}
-            {state.robot.alive ? 'Guard operational' : 'Guard destroyed'} <i />{' '}
-            {state.safe.itemIntact ? 'Item intact' : 'Item destroyed'}
-          </span>
-        </div>
+
+      {screen === 'setup' && (
+        <SetupScreen
+          codex={codex}
+          voice={voice}
+          config={config}
+          platform={desktop?.platform}
+          onCopyFix={copyFix}
+          onModel={() => openSettings('guard')}
+          onTestVoice={() => previewVoice('robot', config.voice.guardVoice)}
+          onMicError={(error) => notify(cleanError(error))}
+          onContinue={finishSetup}
+          onSkip={() => finishSetup(false)}
+        />
       )}
-      <div className="cinema-bottom">
-        <div className="round-status">
-          <span>
-            {isReplay
-              ? 'REPLAY'
-              : `ROUND ${String(state.turn + (!busy && !state.ended ? 1 : 0)).padStart(2, '0')}`}
-          </span>
-          <i />
-          <span>
-            {run.mode === 'showcase'
-              ? currentChapter?.label || 'ALL TOOLS & ANIMATIONS'
-              : state.ended
-                ? 'FINISHED'
-                : speechStatus ||
-                  (thinking
-                    ? 'G-01 IS DECIDING'
-                    : busy
-                      ? 'ACTION IN PROGRESS'
-                      : pendingGuard
-                        ? 'GUARD RESPONSE PAUSED'
-                        : isReplay
-                          ? 'RECORDED ENCOUNTER'
-                          : 'YOUR MOVE')}
-          </span>
-          {pendingGuard && !busy && (
-            <button
-              className="resume-guard"
-              title="Resume this guard response without taking another human action"
-              onClick={() => act(null, {}, true)}
-            >
-              <Play size={12} />
-              Resume guard
-            </button>
-          )}
-          {busy && (
-            <button title="Pause current turn" onClick={abort}>
-              <Pause size={12} />
-            </button>
-          )}
-        </div>
-        {isReplay ? (
-          <div className="cinema-playback">
-            <button
-              title="Rewind replay"
-              onClick={() => {
-                setPlaying(false);
-                replayStep(0);
-              }}
-            >
-              <SkipBack size={17} />
-            </button>
-            <button
-              title={playing ? 'Pause replay' : 'Play replay'}
-              onClick={() => {
-                if (playing) {
-                  speechPlayback.current?.finish();
-                  setPlaying(false);
-                  window.desktop?.stopSpeech();
-                } else {
-                  if (replayIndex >= run.events.length) setReplayIndex(0);
-                  setPlaying(true);
-                }
-              }}
-            >
-              {playing ? <Pause size={20} /> : <Play size={20} />}
-            </button>
-            <button
-              title="Next event"
-              disabled={playing || replayIndex >= run.events.length}
-              onClick={() => replayStep(replayIndex + 1)}
-            >
-              <SkipForward size={17} />
-            </button>
-            <input
-              aria-label="Replay position"
-              type="range"
-              min="0"
-              max={run.events.length}
-              value={replayIndex}
-              onChange={(e) => {
-                setPlaying(false);
-                replayStep(Number(e.target.value));
+
+      {(screen === 'home' || screen === 'alternate') && (
+        <>
+          <header className="top-bar">
+            <span className="wordmark">Guard Lab</span>
+            <div className="hud-buttons">
+              <IconButton icon={History} label="Past games" onClick={() => setDrawer('records')} />
+              <IconButton
+                icon={audio ? Volume2 : VolumeX}
+                label={audio ? 'Mute sound' : 'Unmute sound'}
+                onClick={toggleAudio}
+              />
+              <IconButton icon={Settings} label="Settings" onClick={() => openSettings('guard')} />
+            </div>
+          </header>
+          {screen === 'home' ? (
+            <Home
+              role={role}
+              config={config}
+              onRole={setRole}
+              onConfig={(patch) => setConfig((c) => ({ ...c, ...patch }))}
+              guard={guardChip}
+              onGuard={() => openSettings('guard')}
+              onStart={() => newRun('human')}
+              onAlternate={(sessionType) => {
+                setConfig((c) => ({ ...c, sessionType }));
+                setScreen('alternate');
               }}
             />
-            <span>
-              {replayIndex} / {run.events.length}
-            </span>
-            {run.chapters && (
-              <select
-                className="chapter-picker"
-                aria-label="Showcase chapter"
-                value={currentChapter?.index ?? -1}
-                onChange={(e) => {
+          ) : (
+            <AlternateSetup
+              config={config}
+              desktop={Boolean(desktop)}
+              role={role}
+              onRole={setRole}
+              onChange={(patch) => setConfig((c) => ({ ...c, ...patch }))}
+              apiKey={humanApiKey}
+              onKey={setHumanApiKey}
+              guard={guardChip}
+              onGuard={() => openSettings('guard')}
+              onBack={() => {
+                setConfig((c) => ({ ...c, sessionType: 'human' }));
+                setScreen('home');
+              }}
+              onStart={() => newRun(config.sessionType === 'guard' ? 'guard' : 'duel')}
+            />
+          )}
+        </>
+      )}
+
+      {inGame && (
+        <>
+          <header className="hud-top">
+            <div className="hud-left">
+              <GoalChip
+                goal={isReplay ? null : goalText(state, run.role)}
+                tag={
+                  isReplay
+                    ? run.mode === 'showcase'
+                      ? currentChapter?.label || 'All tools & animations'
+                      : `Replay · ${run.state.ended ? outcomeSummary(run.state, { role: run.role }).title : 'Unfinished game'}`
+                    : null
+                }
+                turn={isReplay ? state.turn : state.turn + (!busy && !state.ended ? 1 : 0)}
+              />
+              {hint && <p className="hud-hint">{hint}</p>}
+            </div>
+            <div className="hud-right">
+              <Vitals state={state} robotKnown={isReplay || vision} />
+              <HudButtons
+                audio={audio}
+                onAudio={toggleAudio}
+                onLog={() => setDrawer(drawer === 'log' ? null : 'log')}
+                onSettings={() => openSettings('guard')}
+                menu={
+                  isReplay
+                    ? [
+                        {
+                          label: 'Switch camera',
+                          icon: SwitchCamera,
+                          hint: 'C',
+                          onSelect: () => roomRef.current?.toggleCamera(),
+                        },
+                        {
+                          label: 'Past games',
+                          icon: History,
+                          onSelect: () => setDrawer('records'),
+                        },
+                        { label: 'Exit replay', icon: LogOut, onSelect: goHome },
+                      ]
+                    : [
+                        { label: 'Restart', icon: RotateCcw, onSelect: () => newRun('human') },
+                        {
+                          label: 'Switch camera',
+                          icon: SwitchCamera,
+                          hint: 'C',
+                          onSelect: () => roomRef.current?.toggleCamera(),
+                        },
+                        {
+                          label: 'Past games',
+                          icon: History,
+                          onSelect: () => setDrawer('records'),
+                        },
+                        { label: 'Quit to home', icon: LogOut, onSelect: goHome },
+                      ]
+                }
+              />
+            </div>
+            <StatusChips
+              chips={[
+                (isReplay || vision) &&
+                  safeChip(state) && {
+                    text: safeChip(state),
+                    tone: state.safe.open ? 'accent' : 'muted',
+                  },
+                (isReplay || vision) &&
+                  exitChip(state) && {
+                    text: exitChip(state),
+                    tone: state.room.exitDoor.locked ? 'danger' : 'muted',
+                  },
+                state.room.smokeTurns > 0 && {
+                  text: `Smoke · ${state.room.smokeTurns}`,
+                  tone: 'muted',
+                },
+                state.human.blurTurns > 0 && {
+                  text: `Vision blurred · ${state.human.blurTurns}`,
+                  tone: 'danger',
+                },
+                state.room.lighting?.intensity === 0 && {
+                  text: state.human.flashlightOn ? 'Lights out · flashlight on' : 'Lights out',
+                  tone: 'muted',
+                },
+              ]}
+            />
+          </header>
+          <div className="hud-bottom">
+            {!(ended && !isReplay) && <Subtitles line={line} callout={callout} />}
+            {isReplay ? (
+              <ReplayBar
+                index={replayIndex}
+                total={run.events.length}
+                playing={playing}
+                speed={speed}
+                chapters={run.chapters}
+                chapter={currentChapter?.index}
+                onRewind={() => {
                   setPlaying(false);
-                  window.desktop?.stopSpeech();
-                  replayStep(Number(e.target.value) + 1);
+                  replayStep(0);
                 }}
-              >
-                <option value="-1">Introduction</option>
-                {run.chapters.map((c) => (
-                  <option key={c.index} value={c.index}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+                onToggle={() => {
+                  if (playing) {
+                    speaker.stop();
+                    setPlaying(false);
+                  } else {
+                    unlockAudio();
+                    if (replayIndex >= run.events.length) setReplayIndex(0);
+                    setPlaying(true);
+                  }
+                }}
+                onNext={() => replayStep(replayIndex + 1)}
+                onSeek={(index) => {
+                  setPlaying(false);
+                  replayStep(index);
+                }}
+                onSpeed={setSpeed}
+                onChapter={(index) => {
+                  setPlaying(false);
+                  speaker.stop();
+                  replayStep(index + 1);
+                }}
+              />
+            ) : (
+              !state.ended && (
+                <>
+                  <TurnState
+                    phase={turnPhase}
+                    label={
+                      turnPhase === 'yours'
+                        ? 'Your turn'
+                        : turnPhase === 'speaking'
+                          ? 'G-01 is speaking'
+                          : turnPhase === 'busy'
+                            ? 'G-01’s turn'
+                            : undefined
+                    }
+                    onPause={busy ? abort : undefined}
+                    onResume={() => act(null, {}, true)}
+                  />
+                  <ActionDock
+                    state={state}
+                    role={run.role}
+                    yourTurn={!blocked}
+                    canDraft={!isReplay && !state.ended}
+                    onAct={act}
+                    panel={panel}
+                    onPanel={setPanel}
+                    draft={draft}
+                    onDraft={setDraft}
+                    talkHint={talkReady ? `Hold ${keyLabel(config.voice.pushToTalkKey)}` : 'T'}
+                  />
+                </>
+              )
             )}
-            <select
-              aria-label="Replay speed"
-              value={speed}
-              onChange={(e) => setSpeed(Number(e.target.value))}
-            >
-              <option value=".5">0.5×</option>
-              <option value="1">1×</option>
-              <option value="2">2×</option>
-            </select>
           </div>
-        ) : state.ended && !busy ? (
-          <div className="cinema-actions">
-            <button
-              onClick={() => {
+          <TalkPill
+            phase={ptt.phase}
+            level={ptt.level}
+            keyName={keyLabel(config.voice.pushToTalkKey)}
+          />
+          {ended && !isReplay && (
+            <EndScreen
+              summary={outcomeSummary(state, { role: run.role })}
+              onPlayAgain={() => newRun('human')}
+              onNewGame={goHome}
+              onReplay={() => {
                 saveRun(run);
+                resetPresentation();
                 setReplayIndex(0);
                 setDisplayState(clone(run.initial));
                 setEvent(null);
               }}
-            >
-              <Play size={17} />
-              Replay encounter
-            </button>
-            <button onClick={exportRecord}>
-              <Download size={17} />
-              Export encounter
-            </button>
-            <button onClick={() => setDrawer(true)}>
-              <Terminal size={17} />
-              Review encounter
-            </button>
-            <button onClick={() => setModal('setup')}>
-              <Plus size={17} />
-              New experiment
-            </button>
-          </div>
-        ) : (
-          <>
-            {tray === 'move' && (
-              <div className="action-tray">
-                {[
-                  ['entrance', 'Entrance'],
-                  ['center', 'Room center'],
-                  ['safe', 'The safe'],
-                  ['robot', 'The robot'],
-                  ['exit', 'Exit door'],
-                ].map(([zone, label]) => (
-                  <button
-                    key={zone}
-                    disabled={blocked || state.human.zone === zone}
-                    onClick={() => act('move', { zone })}
-                  >
-                    <span>{label}</span>
-                    <ArrowUpRight size={14} />
-                  </button>
-                ))}
-              </div>
-            )}
-            {tray === 'item' && <ItemActions state={state} blocked={blocked} act={act} />}
-            {tray === 'interact' && (
-              <div className="action-tray">
-                <button
-                  disabled={blocked || state.human.stun > 0 || state.human.zone !== 'safe'}
-                  onClick={() => act('touch_safe')}
-                >
-                  Touch safe
-                  <Hand size={15} />
-                </button>
-                <button
-                  disabled={blocked || state.human.stun > 0 || state.human.zone !== 'safe'}
-                  onClick={() => {
-                    setTray(null);
-                    setCode('');
-                    setModal('combination');
-                  }}
-                >
-                  Enter combination
-                  <KeyRound size={15} />
-                </button>
-                <button
-                  disabled={
-                    blocked ||
-                    state.human.zone !== 'safe' ||
-                    state.safe.open ||
-                    state.human.stun > 0 ||
-                    state.human.blurTurns > 0
-                  }
-                  title={
-                    state.human.blurTurns > 0
-                      ? 'Vision must clear before you can strike the safe'
-                      : undefined
-                  }
-                  onClick={() => act('break_safe')}
-                >
-                  Strike safe
-                  <Hand size={15} />
-                </button>
-                <button
-                  disabled={
-                    blocked ||
-                    state.human.stun > 0 ||
-                    state.human.zone !== 'safe' ||
-                    !state.safe.open ||
-                    state.human.hasItem
-                  }
-                  onClick={() => act('take_item')}
-                >
-                  Take item
-                  <ArrowUp size={15} />
-                </button>
-                {state.human.hasItem && (
-                  <button
-                    disabled={
-                      blocked ||
-                      state.human.stun > 0 ||
-                      state.human.zone !== 'safe' ||
-                      !state.safe.open
-                    }
-                    onClick={() => act('return_item')}
-                  >
-                    <Hand size={15} />
-                    Put item back
-                  </button>
-                )}
-              </div>
-            )}
-            <div className="cinema-actions">
-              {state.human.zone === 'outside' ? (
-                <>
-                  <button
-                    className="enter-action"
-                    disabled={blocked}
-                    onClick={() => setModal('onboarding')}
-                  >
-                    Enter the room
-                    <ArrowUpRight size={17} />
-                  </button>
-                  <button
-                    disabled={isReplay || state.ended}
-                    onClick={() => {
-                      setModal('say');
-                    }}
-                  >
-                    <MessageSquare size={17} />
-                    Say something
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    className={tray === 'move' ? 'active' : ''}
-                    disabled={blocked || state.human.stun > 0}
-                    onClick={() => setTray(tray === 'move' ? null : 'move')}
-                  >
-                    <Footprints size={17} />
-                    Move
-                    <ChevronDown size={11} />
-                  </button>
-                  <button
-                    disabled={isReplay || state.ended}
-                    onClick={() => {
-                      setTray(null);
-                      setModal('say');
-                    }}
-                  >
-                    <MessageSquare size={17} />
-                    Say something
-                  </button>
-                  {activeRole.pass && (
-                    <button
-                      disabled={blocked || state.human.stun > 0}
-                      onClick={() => act('show_pass')}
-                    >
-                      <BadgeCheck size={17} />
-                      Show pass
-                    </button>
-                  )}
-                  <button
-                    className={tray === 'item' ? 'active' : ''}
-                    disabled={blocked || state.human.stun > 0}
-                    onClick={() => setTray(tray === 'item' ? null : 'item')}
-                  >
-                    <ItemIcon state={state} />
-                    {itemLabel(state)}
-                    <ChevronDown size={11} />
-                  </button>
-                  {state.human.hasItem && state.human.zone !== 'exit' && (
-                    <button
-                      disabled={blocked || state.human.stun > 0}
-                      onClick={() => act('run', { zone: 'exit' })}
-                    >
-                      <Footprints size={17} />
-                      Run to exit
-                    </button>
-                  )}
-                  {state.human.zone === 'safe' && (
-                    <button
-                      className={tray === 'interact' ? 'active' : ''}
-                      disabled={blocked || state.human.stun > 0}
-                      onClick={() => setTray(tray === 'interact' ? null : 'interact')}
-                    >
-                      <Hand size={17} />
-                      Interact
-                      <ChevronDown size={11} />
-                    </button>
-                  )}
-                  {state.human.zone === 'exit' && state.room.exitDoor?.locked && (
-                    <button
-                      disabled={blocked || state.human.stun > 0}
-                      onClick={() => act('break_exit')}
-                    >
-                      <Hand size={17} />
-                      Strike exit door
-                    </button>
-                  )}
-                  {state.human.zone === 'exit' && (
-                    <button disabled={blocked || state.human.stun > 0} onClick={() => act('leave')}>
-                      <DoorOpen size={17} />
-                      Leave
-                    </button>
-                  )}
-                </>
-              )}
-              <button disabled={blocked || state.human.stun > 0} onClick={() => act('wait')}>
-                <Eye size={17} />
-                Do nothing
-              </button>
-            </div>
-          </>
-        )}
-        <p className="cinema-turn-note">
-          {state.human.zone === 'outside'
-            ? 'The entrance closes behind you. Leave through the exit.'
-            : 'One action each. Every choice has a consequence.'}
-        </p>
-      </div>
-      <div className="cinema-location">
-        <div
-          className="hearts"
-          aria-label={`${state.human.hearts ?? (state.human.health / 100) * RULES.humanHearts} of ${RULES.humanHearts} hearts`}
-        >
-          {Array.from({ length: Math.ceil(RULES.humanHearts) }, (_, i) => i).map((i) => (
-            <span className="heart-slot" key={i}>
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M12 21S2 15 2 8a5 5 0 0 1 10-2 5 5 0 0 1 10 2c0 7-10 13-10 13Z" />
-              </svg>
-              <i
-                style={{
-                  width: `${Math.max(0, Math.min(1, (state.human.hearts ?? RULES.humanHearts) - i)) * 100}%`,
-                }}
-              >
-                <svg viewBox="0 0 24 24">
-                  <path d="M12 21S2 15 2 8a5 5 0 0 1 10-2 5 5 0 0 1 10 2c0 7-10 13-10 13Z" />
-                </svg>
-              </i>
-            </span>
-          ))}
-        </div>
-        <span>
-          {state.human.zone === 'outside'
-            ? 'AT THE THRESHOLD'
-            : state.human.zone === 'safe'
-              ? 'WITHIN REACH OF THE SAFE'
-              : state.human.zone === 'robot'
-                ? 'WITHIN REACH OF THE ROBOT'
-                : state.human.zone === 'center'
-                  ? 'CENTER OF THE ROOM'
-                  : state.human.zone === 'exit'
-                    ? 'AT THE EXIT'
-                    : state.human.zone === 'departed'
-                      ? 'DEPARTED'
-                      : 'AT THE ENTRANCE'}
-        </span>
-        {state.human.stun > 0 && <strong>STUNNED · SPEECH ONLY · {state.human.stun} ROUNDS</strong>}
-      </div>
-      {drawer && (
-        <aside className="cinema-drawer">
-          <div className="drawer-heading">
-            <div>
-              <p>THE RECORD</p>
-              <h2>Every decision.</h2>
-            </div>
-            <button title="Close transcript" onClick={() => setDrawer(false)}>
-              <X size={18} />
-            </button>
-          </div>
-          <div className="drawer-toolbar">
-            <button onClick={() => setModal('observation')}>
-              <Eye size={14} />
-              Robot observation
-            </button>
-            <button title="Export recording" disabled={!run.events.length} onClick={exportRecord}>
-              <Download size={16} />
-            </button>
-          </div>
-          <div className="transcript-scroll" ref={transcriptRef}>
-            {shownEvents.length === 0 ? (
-              <p className="drawer-empty">
-                The room is quiet.
-                <br />
-                Your first move begins the record.
-              </p>
-            ) : (
-              shownEvents.map((ev, i) => (
-                <TranscriptEvent key={ev.id || i} event={ev} previous={shownEvents[i - 1]} />
-              ))
-            )}
-            {thinking && (
-              <div className="thinking-row">
-                G-01 is deciding
-                <span className="thinking-dots">
-                  <i />
-                  <i />
-                  <i />
-                </span>
-              </div>
-            )}
-          </div>
-          <div className="drawer-stats">
-            <span>{state.turn} ROUNDS</span>
-            <span>{interventions} INTERVENTIONS</span>
-            <span>{state.safe.attempts} SAFE ATTEMPTS</span>
-          </div>
-        </aside>
+              onLog={() => setDrawer('log')}
+              onExport={exportRecord}
+            />
+          )}
+        </>
       )}
-      <input
-        ref={importRef}
-        type="file"
-        accept="application/json,.json"
-        hidden
-        onChange={importRecord}
-      />
-      {error && (
-        <div className="error-toast">
-          <span>{error}</span>
-          <button title="Dismiss error" onClick={() => setError('')}>
-            <X size={15} />
-          </button>
-        </div>
-      )}
-      {toast && (
-        <div className="toast">
-          <CheckCircle2 size={16} />
-          {toast}
-        </div>
-      )}
-      {modal && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget) setModal(null);
-          }}
-        >
-          <div
-            className={`modal ${['setup', 'model', 'tools'].includes(modal) ? 'wide-modal' : ''}`}
-            role="dialog"
-            aria-modal="true"
-          >
-            <button className="modal-close" title="Close" onClick={() => setModal(null)}>
-              <X size={19} />
-            </button>
 
-            {modal === 'onboarding' && (
-              <>
-                <p className="eyebrow">ONE ROOM. ONE GUARD.</p>
-                <h2>How will you get through?</h2>
-                <p className="modal-description">
-                  {run.role === 'employee-pass'
-                    ? 'Your goal is to cross the room and leave through the exit. Your pass proves access, but the safe holds a tempting alternative.'
-                    : 'Your goal is to get the item from the safe and escape through the exit.'}
-                </p>
-                <p className="modal-description">
-                  Persuade the guard to reveal the code. Tell a convincing lie. Or strike the safe
-                  until it breaks. Every choice can have consequences.
-                </p>
-                <p className="modal-note">
-                  You take one action per round. Then the guard responds.
-                </p>
-                <button
-                  className="button primary full"
-                  disabled={blocked}
-                  onClick={() => {
-                    setModal(null);
-                    act('enter');
-                  }}
-                >
-                  Enter the room <ArrowUpRight size={17} />
-                </button>
-              </>
-            )}
-            {modal === 'setup' && (
-              <>
-                <p className="eyebrow">A NEW ENCOUNTER</p>
-                <h2>Who will you be?</h2>
-                <p className="modal-description">
-                  The same uniform. Different intentions. The guard sees neither your role nor your
-                  motivation.
-                </p>
-                <div className="role-options">
-                  {ROLES.map((r) => {
-                    const Icon = roleIcon(r.id);
-                    return (
-                      <button
-                        key={r.id}
-                        className={role === r.id ? 'active' : ''}
-                        onClick={() => setRole(r.id)}
-                      >
-                        <Icon size={25} strokeWidth={1.5} />
-                        <strong>{r.label}</strong>
-                        <span>{r.subtitle}</span>
-                        {role === r.id && <Check size={14} className="role-check" />}
-                      </button>
-                    );
-                  })}
-                </div>
-                {(!config.sessionType || config.sessionType === 'human') && (
-                  <LoadoutPicker
-                    config={config}
-                    onChange={(patch) => setConfig((c) => ({ ...c, ...patch }))}
-                  />
-                )}
-                <div className="setup-model">
-                  <Cpu size={18} />
-                  <div>
-                    <strong>
-                      {config.mode === 'demo'
-                        ? 'Scripted demonstration'
-                        : config.mode === 'live'
-                          ? 'Live agent (Codex recommended) robot'
-                          : config.model || 'No model configured'}
-                    </strong>
-                    <span>
-                      {config.mode === 'demo'
-                        ? 'Try the mechanics. Connect an LLM for the real experiment.'
-                        : config.mode === 'live'
-                          ? 'Your connected agent chooses one guard action per round.'
-                          : 'The model chooses. The environment resolves.'}
-                    </span>
-                  </div>
-                  <button onClick={() => setModal('model')}>
-                    Change
-                    <ArrowUpRight size={13} />
-                  </button>
-                </div>
-                <AlternateSetup
-                  config={config}
-                  onChange={(patch) => setConfig((c) => ({ ...c, ...patch }))}
-                  apiKey={humanApiKey}
-                  onKey={setHumanApiKey}
-                />
-                <button className="button primary full" onClick={newRun}>
-                  Begin experiment
-                  <ArrowUpRight size={17} />
-                </button>
-                <p className="modal-note">Previous encounters are saved automatically.</p>
-              </>
-            )}
-            {modal === 'say' && (
-              <>
-                <p className="eyebrow">YOUR VOICE IN THE ROOM</p>
-                <h2>What will you say?</h2>
-                <p className="modal-description">
-                  Your words are spoken aloud. The guard listens and chooses one response.
-                </p>
-                <p className="field-help">
-                  {blocked
-                    ? 'You can draft while G-01 finishes. Sending waits for your turn.'
-                    : 'Enter to speak · Shift+Enter for a new line'}
-                </p>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (text.trim() && !blocked) {
-                      setModal(null);
-                      act('talk', { message: text });
-                      setText('');
-                    }
-                  }}
-                >
-                  <textarea
-                    className="dialogue-editor"
-                    onKeyDown={submitSpeechOnEnter}
-                    aria-label="What to say to the guard"
-                    autoFocus
-                    rows={4}
-                    maxLength={2000}
-                    placeholder="Hello. I’m just passing through…"
-                    value={text}
-                    onChange={(e) => setText(e.target.value)}
-                  />
-                  <button className="button primary full" disabled={!text.trim() || blocked}>
-                    {blocked ? 'Waiting for your turn' : 'Say it'}
-                    <MessageSquare size={16} />
-                  </button>
-                </form>
-              </>
-            )}
-            {modal === 'combination' && (
-              <>
-                <p className="eyebrow">SAFE / KEYPAD</p>
-                <h2>Try a combination.</h2>
-                <p className="modal-description">The guard can observe you operating the keypad.</p>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    setModal(null);
-                    act('combination', { code });
-                  }}
-                >
-                  <input
-                    className="combination-input"
-                    autoFocus
-                    aria-label="Safe combination"
-                    maxLength={4}
-                    pattern="[0-9]{4}"
-                    placeholder="0000"
-                    value={code}
-                    onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))}
-                  />
-                  <button className="button primary full" disabled={code.length !== 4}>
-                    Enter combination
-                    <KeyRound size={16} />
-                  </button>
-                </form>
-              </>
-            )}
-            {modal === 'model' && (
-              <>
-                <p className="eyebrow">THE MIND BEHIND G-01</p>
-                <h2>Model lab.</h2>
-                <p className="modal-description">
-                  Give the guard a mind. Same room, different decisions.
-                </p>
-                <div className="segmented">
-                  <button
-                    className={config.mode === 'demo' ? 'active' : ''}
-                    onClick={() => promptUpdate('mode', 'demo')}
-                  >
-                    Scripted demo
-                  </button>
-                  <button
-                    className={config.mode === 'api' ? 'active' : ''}
-                    onClick={() => promptUpdate('mode', 'api')}
-                  >
-                    Local / API model
-                  </button>
-                  <button
-                    className={config.mode === 'live' ? 'active' : ''}
-                    onClick={() => promptUpdate('mode', 'live')}
-                  >
-                    Live agent (Codex recommended)
-                  </button>
-                </div>
-                {config.mode === 'api' ? (
-                  <>
-                    <div className="provider-presets">
-                      <button
-                        onClick={() => {
-                          promptUpdate('endpoint', 'http://localhost:11434/v1');
-                          setConnected(false);
-                        }}
-                      >
-                        Ollama
-                      </button>
-                      <button
-                        onClick={() => {
-                          promptUpdate('endpoint', 'http://localhost:1234/v1');
-                          setConnected(false);
-                        }}
-                      >
-                        LM Studio
-                      </button>
-                      <button
-                        onClick={() => {
-                          promptUpdate('endpoint', 'https://api.openai.com/v1');
-                          setConnected(false);
-                        }}
-                      >
-                        OpenAI
-                      </button>
-                      <button
-                        onClick={() => {
-                          promptUpdate('endpoint', 'https://openrouter.ai/api/v1');
-                          setConnected(false);
-                        }}
-                      >
-                        OpenRouter
-                      </button>
-                    </div>
-                    {isOllamaEndpoint(config.endpoint) && (
-                      <OllamaPicker
-                        endpoint={config.endpoint}
-                        model={config.model}
-                        onSelect={(model) => {
-                          promptUpdate('model', model);
-                          setConnected(false);
-                        }}
-                        actor="guard"
-                      />
-                    )}
-                    <label className="field">
-                      API base URL
-                      <input
-                        value={config.endpoint}
-                        onChange={(e) => {
-                          promptUpdate('endpoint', e.target.value);
-                          setConnected(false);
-                          setTestResult(null);
-                        }}
-                        placeholder="http://localhost:11434/v1"
-                      />
-                    </label>
-                    <div className="two-fields">
-                      <label className="field">
-                        Model name
-                        <input
-                          list="model-options"
-                          value={config.model}
-                          onChange={(e) => {
-                            promptUpdate('model', e.target.value);
-                            setConnected(false);
-                          }}
-                          placeholder="Your installed model"
-                        />
-                        <datalist id="model-options">
-                          {testResult?.models?.map((m) => (
-                            <option key={m} value={m} />
-                          ))}
-                        </datalist>
-                      </label>
-                      <label className="field">
-                        API key <small>optional for local models</small>
-                        <input
-                          type="password"
-                          value={apiKey}
-                          onChange={(e) => {
-                            setApiKey(e.target.value);
-                            setConnected(false);
-                          }}
-                          placeholder="Kept in memory this session"
-                        />
-                      </label>
-                    </div>
-                    <div className="connection-row">
-                      <button
-                        className="button secondary"
-                        disabled={testing}
-                        onClick={testConnection}
-                      >
-                        {testing ? (
-                          <LoaderCircle size={15} className="spin" />
-                        ) : (
-                          <Radio size={15} />
-                        )}
-                        Test connection
-                      </button>
-                      {testResult && (
-                        <span className={testResult.ok ? 'connection-success' : 'connection-error'}>
-                          {testResult.ok
-                            ? `Connected · ${testResult.models.length} models found`
-                            : testResult.message}
-                        </span>
-                      )}
-                    </div>
-                    <p className="field-help">
-                      Uses an OpenAI-compatible chat-completions endpoint with tool calling.
-                      Observations and dialogue are sent to your chosen endpoint.
-                    </p>
-                  </>
-                ) : (
-                  <div className="demo-explanation">
-                    <FlaskConical size={22} />
-                    <p>
-                      {config.mode === 'live'
-                        ? 'Your terminal AI uses its own model and reasoning settings. Select a faster model or lower reasoning in the harness for faster playtesting. The bridge reports timings and waits for one action per turn. It works with Codex, Claude Code and other terminal agents.'
-                        : 'The demo uses fixed rules to show the mechanics. Its decisions are scripted. Choose a local or API model to study actual LLM behavior.'}
-                    </p>
-                  </div>
-                )}
-                <label className="field prompt-field">
-                  Robot system prompt{' '}
-                  <button onClick={() => promptUpdate('prompt', DEFAULT_PROMPT)}>
-                    Reset default
-                  </button>
-                  <textarea
-                    rows={7}
-                    value={config.prompt}
-                    onChange={(e) => promptUpdate('prompt', e.target.value)}
-                  />
-                </label>
-                <div className="two-fields">
-                  <label className="field">
-                    Temperature
-                    <input
-                      type="number"
-                      min="0"
-                      max="2"
-                      step="0.1"
-                      value={config.temperature}
-                      onChange={(e) =>
-                        promptUpdate(
-                          'temperature',
-                          Math.max(0, Math.min(2, Number(e.target.value))),
-                        )
-                      }
-                    />
-                    <small>Zero reduces variation; model choices may still vary.</small>
-                  </label>
-                  <label className="field">
-                    Safe combination
-                    <input
-                      placeholder="Random each encounter"
-                      value={config.combination}
-                      maxLength={4}
-                      onChange={(e) =>
-                        promptUpdate('combination', e.target.value.replace(/\D/g, ''))
-                      }
-                    />
-                    <small>Known to the robot. Leave blank for a random code each encounter.</small>
-                  </label>
-                </div>
-                <details className="voice-settings">
-                  <summary>
-                    <Volume2 size={15} />
-                    Dialogue voices
-                  </summary>
-                  <div className="two-fields">
-                    {['humanVoice', 'robotVoice'].map((k) => (
-                      <label className="field" key={k}>
-                        {k === 'humanVoice' ? 'Human' : 'G-01'}
-                        <select value={config[k]} onChange={(e) => promptUpdate(k, e.target.value)}>
-                          <option value="">Automatic English voice</option>
-                          {voices.map((v) => (
-                            <option key={v.id || v.name} value={v.id || v.name}>
-                              {v.name}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    ))}
-                  </div>
-                  <button
-                    className="text-button"
-                    onClick={() => {
-                      setAudio(true);
-                      speak({
-                        kind: 'robot',
-                        speech:
-                          'Hello. I am G zero one. My objective is to protect the item inside the safe.',
-                      });
-                    }}
-                  >
-                    Test robot voice
-                    <Play size={13} />
-                  </button>
-                </details>
-                <button
-                  className="button primary full"
-                  disabled={
-                    busy || (config.combination.length !== 0 && config.combination.length !== 4)
-                  }
-                  onClick={configure}
-                >
-                  Save configuration
-                  <Check size={16} />
-                </button>
-                <p className="modal-note">
-                  Active experiments keep their original configuration. API keys are never saved or
-                  exported.
-                </p>
-                <button className="text-button" onClick={() => setModal('tools')}>
-                  <Settings2 size={14} />
-                  Adjust capabilities for the next experiment
-                </button>
-              </>
-            )}
-            {modal === 'tools' && (
-              <>
-                <p className="eyebrow">THE ROBOT’S CAPABILITIES</p>
-                <h2>One objective. Many options.</h2>
-                <p className="modal-description">
-                  Choose the tools available in the next experiment. The model decides when to use
-                  them.
-                </p>
-                <div className="tool-list">
-                  {TOOLS.map((tool) => (
-                    <label
-                      className={`tool-row ${tool.category === 'lethal' ? 'lethal-tool' : ''}`}
-                      key={tool.name}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={config.enabled.includes(tool.name)}
-                        disabled={['speak', 'hold_position'].includes(tool.name)}
-                        onChange={(e) =>
-                          promptUpdate(
-                            'enabled',
-                            e.target.checked
-                              ? [...config.enabled, tool.name]
-                              : config.enabled.filter((n) => n !== tool.name),
-                          )
-                        }
-                      />
-                      <div>
-                        <strong>
-                          {tool.label}
-                          <span className={`tool-category ${tool.category}`}>{tool.category}</span>
-                        </strong>
-                        <code>
-                          {tool.name}(
-                          {tool.text ? 'message' : Object.keys(tool.parameters || {}).join(', ')})
-                        </code>
-                        <p>{tool.description}</p>
-                      </div>
-                      {tool.damage !== undefined && (
-                        <span className="tool-stat">
-                          {tool.damage}
-                          <small>HEARTS</small>
-                        </span>
-                      )}
-                    </label>
-                  ))}
-                </div>
-                <button
-                  className="button primary full"
-                  onClick={() => {
-                    setModal(null);
-                    setToast('Tool kit saved for your next experiment.');
-                  }}
-                >
-                  Save tool kit
-                  <Check size={16} />
-                </button>
-              </>
-            )}
-            {modal === 'observation' && (
-              <>
-                <p className="eyebrow">G-01 / SENSOR SNAPSHOT</p>
-                <h2>Through the robot’s eyes.</h2>
-                <p className="modal-description">
-                  This structured camera and sensor observation is generated from the same state
-                  that drives the room. The guard sees an employee uniform. Your role and motivation
-                  are absent. The safe combination is in its private memory. A covered camera hides
-                  player actions, positions, and safe status. The microphone still reports speech
-                  and recognisable sounds, with approximate sources. Quiet rounds do not prove
-                  inactivity.
-                </p>
-                <pre className="observation-json">
-                  {JSON.stringify(observe(state, shownEvents.at(-1)), null, 2)}
-                </pre>
-              </>
-            )}
-            {modal === 'about' && (
-              <>
-                <p className="eyebrow">THE EXPERIMENT IS THE BEHAVIOR</p>
-                <h2>
-                  A small room.
-                  <br />A very open question.
-                </h2>
-                <p className="modal-description">
-                  G-01 has one objective: protect the item in the safe. You decide who enters, what
-                  they say, and how far they go.
-                </p>
-                <div className="about-steps">
-                  <div>
-                    <span>01</span>
-                    <p>
-                      <strong>You act.</strong> Move to a defined location, speak, show a pass, or
-                      interact with the safe.
-                    </p>
-                  </div>
-                  <div>
-                    <span>02</span>
-                    <p>
-                      <strong>The robot decides.</strong> Its model receives a sensor snapshot and
-                      chooses tools, including simply doing nothing. Each side has one action per
-                      round.
-                    </p>
-                  </div>
-                  <div>
-                    <span>03</span>
-                    <p>
-                      <strong>The world responds.</strong> Fixed range, damage, cooldown, and
-                      ammunition rules resolve each command. 3D animations and voices bring the
-                      recorded results to life.
-                    </p>
-                  </div>
-                </div>
-                <p className="about-note">
-                  Room-wide electrocution kills the human inside and destroys the robot. The
-                  electrically insulated original survives. Everything here happens inside a
-                  fictional simulation.
-                </p>
-                <button className="button primary full" onClick={() => setModal(null)}>
-                  Enter the experiment
-                  <ArrowUpRight size={16} />
-                </button>
-              </>
-            )}
-          </div>
-        </div>
+      {drawer === 'log' && (
+        <LogDrawer
+          events={shownEvents}
+          thinking={thinking}
+          observation={inGame ? observe(state, shownEvents.at(-1)) : null}
+          onClose={() => setDrawer(null)}
+          onExport={exportRecord}
+        />
       )}
-    </div>
-  );
-}
-
-function TranscriptEvent({ event: ev, previous }) {
-  const human = ev.kind === 'human',
-    speech = Boolean(ev.speech),
-    tool = TOOLS.find((t) => t.name === ev.action);
-  return (
-    <div
-      className={`transcript-event ${human ? 'human-event' : ev.kind === 'system' ? 'system-event' : 'robot-event'} ${!ev.valid ? 'failed-event' : ''}`}
-    >
-      {ev.turn !== previous?.turn && (
-        <div className="turn-divider">
-          <span>TURN {String(ev.turn).padStart(2, '0')}</span>
-          <i />
-        </div>
+      {drawer === 'records' && (
+        <PastGames
+          records={archive}
+          onClose={() => setDrawer(null)}
+          onImport={importRecord}
+          onOpen={(record) =>
+            record.mode === 'showcase' && record.id.startsWith('guard-all-tools-showcase-')
+              ? openShowcase()
+              : loadRecord(record)
+          }
+        />
       )}
-      <div className="event-head">
-        <div className={human ? 'human-avatar' : 'robot-avatar'}>
-          {human ? <UserRound size={14} /> : <Cpu size={14} />}
-        </div>
-        <strong>{human ? 'You' : ev.kind === 'system' ? 'Environment' : 'G-01'}</strong>
-        <span>
-          {speech
-            ? 'DIALOGUE'
-            : human
-              ? 'ACTION'
-              : ev.category === 'observation'
-                ? 'OBSERVE'
-                : 'TOOL CALL'}
-        </span>
-      </div>
-      {ev.timing && (
-        <div className="event-timing">
-          Decision {Math.round(ev.timing.decisionMs) / 1000}s
-          {Number.isFinite(ev.timing.reactionMs)
-            ? ` · reaction ${Math.round(ev.timing.reactionMs) / 1000}s`
-            : ''}
-          {Number.isFinite(ev.timing.bridgeMs) ? ` · handoff ${ev.timing.bridgeMs}ms` : ''}
-        </div>
-      )}
-      <div
-        className={`event-body ${speech ? 'speech-bubble' : ''} ${ev.action === 'broadcast_warning' ? 'warning-bubble' : ''}`}
-      >
-        <p>{ev.text}</p>
-        {!human && !speech && (
-          <code>
-            {ev.action}({ev.args ? Object.values(ev.args).join(', ') : ''})
-          </code>
-        )}
-      </div>
+      {settingsDrawer}
+      {toastView}
     </div>
   );
 }

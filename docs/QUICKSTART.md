@@ -12,23 +12,35 @@ npm start
 
 These commands work in PowerShell, Command Prompt, zsh, bash, and terminal-based AI harnesses. The setup script runs `npm ci` against the committed lockfile, verifies the Electron download, and reuses a matching completed install. Use `node scripts/setup.mjs --force` to reinstall. It installs the Electron runtime, renderer and build tools; it does not install an LLM. Prefer a short checkout path, especially on Windows. There are no hardcoded home directories or working-directory-dependent bridge paths.
 
-## Human + live agent (recommended)
+## Play with Codex (recommended)
+
+```sh
+npm start
+```
+
+The first launch shows a setup screen with three checks:
+
+1. **Guard AI (Codex):** Guard Lab looks for a Codex executable (Settings path, `GUARD_LAB_CODEX`, your PATH, the ChatGPT desktop app's bundled CLI). If you're signed out, click **Sign in with ChatGPT**. If Codex is missing or broken, click **Copy fix prompt**, paste it into Codex or ChatGPT, then **Check again**.
+2. **Voices (Kokoro, about 96 MB):** natural voices for the guard and you.
+3. **Voice input (Whisper, about 130 MB):** hold <kbd>Space</kbd> to talk; release to send.
+
+Everything is optional: without Codex you get the practice guard, without Kokoro speech uses system voices, and without Whisper you type. You can rerun setup from Settings.
+
+Pick **Employee** (cross the room and leave through the exit; your pass proves you may pass) or **Thief** (steal the item and escape alive), bring one item, and press **Start**. The guard can't see your role.
+
+**Settings → Guard** picks the model, reasoning effort and fast mode (default GPT-6 Luna, low, fast on). Codex runs on your own Codex sign-in, in a separate ephemeral thread per encounter with your plugins, MCP servers and coding tools turned off, so the guard sees only the game. Faster settings make the guard react sooner; heavier reasoning makes it slower. `npm run doctor` reports what Codex Guard Lab found.
+
+## Terminal agent bridge
 
 ```sh
 npm run live
 ```
 
-Ask Codex or another terminal agent to read `AGENTS.md` and play the guard. Launch this as a persistent process; do not give the launcher a short timeout that kills the app. In the app, choose **Employee** or **Thief**, male/female appearance, and exactly one item; start the encounter. Click actions to move, speak, present a credential or interact. Saying something opens a text field. Enter sends; Shift+Enter adds a line; Escape closes it. IME composition does not accidentally submit. Both sides' speech is voiced; subtitles are absent.
-
-For the Codex live bridge, our recommendation is to use a frontier model for installation/configuration, then switch to **Luna with Medium or High reasoning** in the Codex app for quicker guard reactions. An agent following `AGENTS.md` stops after setup, before launch, to give you this reminder. After switching, tell it to start the game and play as the robot. This handoff happens before play; once the encounter starts, the agent keeps listening between moves. Other harnesses and direct model connections can use their own model choices.
-
-For Codex terminals, the agent starts with `node scripts/robot-link.mjs listen --compact`, then uses `exchange ACTION --id=REPLY_ID --compact` to submit and await the next packet in one call. The command exits immediately when ready, avoiding long persistent-terminal polls. Other harnesses that deliver stdout immediately can retain `session --compact` with open stdin. Both reuse instructions/tool schemas and preserve current sensors. Read each packet once. Keep the harness turn open until the encounter ends or you stop play: a final chat answer disconnects the agent, and the app cannot wake it. Quiet intervals are normal. Select the model and reasoning in your harness. Decision and visible/audible reaction timings are recorded; model inference, animations and speech still take time. [Latency measurements](LATENCY.md) describe the comparison. The live bridge needs no network after dependencies are installed.
-
-You can draft your next spoken message while G-01 is deciding; sending becomes available on your turn. A gentle eye pulse indicates processing. Selected English voices and scene shaders prepare in the background. Long confirmed speech starts with its first chunk while the remaining audio is generated. These presentation improvements do not choose the guard's action.
+Ask Codex, Claude Code or another terminal agent to read `AGENTS.md` and play the guard (or the human with `--actor=human`). Launch this as a persistent process; do not give the launcher a short timeout that kills the app. The agent starts with `node scripts/robot-link.mjs listen --compact`, then uses `exchange ACTION --id=REPLY_ID --compact` to submit and await the next packet in one call. Keep the harness turn open until the encounter ends: a final chat answer disconnects the agent, and the app cannot wake it. Select the model and reasoning in your harness. [Latency measurements](LATENCY.md) describe the comparison. The bridge needs no network after dependencies are installed.
 
 ## Direct local or API connection
 
-Open **Model lab**, select **Local / API model**, choose endpoint and model, test the connection, and save. API credentials remain in memory for that app session. The protocol is tool-capable `/chat/completions` plus `/models`; a text-only endpoint, provider-native API, or provider with a different tool format needs an adapter. Use a model that can follow one tool call per turn. No particular vendor is required.
+Open **Settings → Guard**, choose **Your model**, choose endpoint and model, test the connection, and save. API credentials remain in memory for that app session. The protocol is tool-capable `/chat/completions` plus `/models`; a text-only endpoint, provider-native API, or provider with a different tool format needs an adapter. Use a model that can follow one tool call per turn. No particular vendor is required.
 
 | Provider       | API base URL                | Setup                                                                                                |
 | -------------- | --------------------------- | ---------------------------------------------------------------------------------------------------- |
@@ -40,18 +52,19 @@ The app lists models from your running server; it neither downloads models nor c
 
 ## Secondary modes
 
-At the bottom of setup, expand **Other ways to play**. **Play as guard** gives you the robot controls and a human AI that chooses its own item. **AI vs AI** uses two independent connections. For the human choose Scripted demo, Local / API model, or Live agent. For live human use `--actor=human` on bridge commands. A guard live agent uses the default robot channel. Pause/resume is available; long automated games pause after 100 rounds. A scripted demo is a deterministic convenience policy, not an LLM experiment.
+On the home screen, use **Other modes**. **Play as guard** gives you the robot controls and a human AI that chooses its own item. **AI vs AI** uses two independent connections. Each AI side can use Codex, a local/API model, the practice policy, or a terminal agent. For live human use `--actor=human` on bridge commands. A guard live agent uses the default robot channel. Pause/resume is available; long automated games pause after 100 rounds. A scripted demo is a deterministic convenience policy, not an LLM experiment.
 
-## English speech
+## Voices and voice input
 
-Missing English Piper voices install automatically on first launch. If that download fails, available English system voices can provide a fallback; the app never silently selects a non-English OS default. The following commands are available for manual installation and verification:
+The setup screen and **Settings → Voice** download, test and remove the models. From a terminal:
 
 ```sh
-npm run voices:install
-npm run voices:test
+npm run voices:install            # Kokoro and Whisper
+npm run voices:install -- --tts   # Kokoro only
+npm run voices:install -- --stt   # Whisper only
 ```
 
-The app automatically installs a platform-specific Piper engine and Ryan/Amy/Lessac English voices if missing. A compact progress indicator shows installation, and failed downloads offer Retry. Completed assets are retained; later launches reuse the cache. The commands above are manual diagnostics/repair, not required setup. It needs `tar` (included with current Windows/macOS and commonly installed on Linux). Assets are ignored by Git and omitted from source exports. Review [voice terms](../THIRD_PARTY.md) before redistribution. Downloads live under app data/voices, shared by source and packaged installations. Existing complete development or bundled voices are reused. Supported download architectures: Windows x64 (also used under Windows ARM64 emulation); macOS x64/arm64; Linux x64/arm64. System speech remains the fallback elsewhere. `GUARD_LAB_VOICES` can point an app or packaged build at an external compatible assets directory.
+Models download from Hugging Face into app data `models/` (set `HF_ENDPOINT` to use a mirror, or `--from=DIR` to install from a local copy). After installation everything runs offline on your CPU through onnxruntime. Microphone audio is captured only while you hold the push-to-talk key and stays in memory. On macOS the first recording asks for microphone permission; on Windows check **Settings → Privacy → Microphone** if recording is blocked. Kokoro and Whisper need the Microsoft Visual C++ runtime on Windows (included with most PCs); if voices fail to load there, install the latest Visual C++ Redistributable from Microsoft. Review [model terms](../THIRD_PARTY.md) before redistribution.
 
 ## Troubleshooting
 
@@ -63,7 +76,8 @@ The app automatically installs a platform-specific Piper engine and Ryan/Amy/Les
 | Live agent waits               | Start the encounter and take a human action. Match the channel and environment variables between launcher and agent                                              |
 | Stale/duplicate response       | Observe a fresh packet; use its exact ID once                                                                                                                    |
 | Tool rejected                  | Read the current schema and sensors. Check range, visibility, ammo and cooldown; do not invent a successful outcome                                              |
-| No speech                      | Unmute, interact once to unlock audio, then install/test local voices                                                                                            |
+| No speech                      | Unmute, interact once to unlock audio, then install or test Kokoro in Settings → Voice                                                                           |
+| Codex not found or signed out  | Use the setup screen's Sign in or Copy fix prompt; or set the executable in Settings → Guard → Advanced                                                          |
 | Two sessions interfere         | Use a different `GUARD_LAB_DATA_DIR` for each app and its agent                                                                                                  |
 | Port already used              | The source launcher automatically picks another available loopback port                                                                                          |
 | API connection fails           | Verify model/server/tool support. `/models` must respond and its model ID must be saved                                                                          |

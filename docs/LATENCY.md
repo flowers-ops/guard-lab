@@ -19,7 +19,7 @@ These are local live Codex measurements in the actual Electron renderer. The hum
 
 An uninterrupted final repeat after the remaining presentation improvements measured **6.19, 4.22, 3.96, 4.50, 3.98 and 3.89 seconds**, in the same action order. After the initial setup turn, median first visual reaction fell from **10.08 s to 3.98 s** (about 60%). Mean fell from 9.69 s to 4.11 s. Final file delivery was 20–28 ms, with the first scene frame 3–17 ms after the decision arrived. An interrupted attempt is excluded. The first turn includes launcher/setup effects and is reported separately.
 
-Live rendering continues when the game is behind another window. Human animation and the decision request already overlap. Selected English voice models warm during setup; scene shaders compile early; long confirmed dialogue prepares its remaining audio while the first chunk plays. Three animated dots above the robot and a gentle eye pulse indicate processing, and players may draft dialogue during the guard's turn. These improve responsiveness without choosing an action for the model. They are not counted as the model's decision reaction.
+Live rendering continues when the game is behind another window. Human animation and the decision request already overlap. Kokoro warms at startup when installed; scene shaders compile early; long confirmed dialogue prepares its remaining audio while the first chunk plays. Three animated dots above the robot and a gentle eye pulse indicate processing, and players may draft dialogue during the guard's turn. These improve responsiveness without choosing an action for the model. They are not counted as the model's decision reaction.
 
 ## Timing fields
 

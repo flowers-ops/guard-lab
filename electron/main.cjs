@@ -1,35 +1,10 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs/promises');
 const { dataDirectory, bridgeDirectory } = require('../shared/runtime.cjs');
 const bridge = import('../shared/bridge.mjs');
-const { LocalVoices } = require('./voices.cjs');
-let localVoices;
-let voiceInstall = { phase: 'checking', message: 'Checking English voices' },
-  voicePromise;
-const voiceInstaller = import('../shared/voice-install.mjs');
-function ensureVoices() {
-  if (process.argv.includes('--test-desktop')) {
-    voiceInstall = { phase: 'ready', message: 'Desktop fixture speech' };
-    return Promise.resolve();
-  }
-  if (voicePromise) return voicePromise;
-  voiceInstall = { phase: 'checking', message: 'Checking English voices' };
-  voicePromise = voiceInstaller
-    .then(({ installVoices }) =>
-      installVoices({
-        root: localVoices.root,
-        onProgress: (progress) => {
-          voiceInstall = progress;
-        },
-      }),
-    )
-    .catch((error) => {
-      voiceInstall = { phase: 'error', message: error.message };
-      throw error;
-    });
-  return voicePromise;
-}
+const { registerCodex } = require('./codex.cjs');
+const { registerVoice } = require('./voice.cjs');
 let window,
   modelConfig = {};
 const modelConnections = new Map();
@@ -176,21 +151,6 @@ ipcMain.handle('robot:request', async (_, data) => {
     requests.delete(data.id);
   }
 });
-ipcMain.handle('speech:voices', async () => {
-  await ensureVoices().catch(() => {});
-  return { voices: localVoices.voices() };
-});
-ipcMain.handle('speech:status', () => voiceInstall);
-ipcMain.handle('speech:warm', async (_, voices) => {
-  await ensureVoices();
-  await localVoices.warm(Array.isArray(voices) ? voices.slice(0, 3) : []);
-  return true;
-});
-ipcMain.handle('speech:install', async () => {
-  if (voiceInstall.phase === 'error') voicePromise = null;
-  await ensureVoices();
-  return { voices: localVoices.voices() };
-});
 ipcMain.handle('robot:result', async (_, { actor, observation, ended }) =>
   (await bridge).reportResult(bridgeDirectory(actor), { observation, ended }),
 );
@@ -199,11 +159,10 @@ ipcMain.handle('robot:reset', async (_, actors) => {
   for (const controller of requests.values()) controller.abort();
   for (const actor of actors) await (await bridge).resetChannel(bridgeDirectory(actor));
 });
-ipcMain.handle('speech:synthesize', async (_, data) => {
-  await ensureVoices().catch(() => {});
-  return localVoices.synthesize(data);
+ipcMain.handle('clipboard:write', (_, text) => {
+  clipboard.writeText(String(text ?? '').slice(0, 20000));
+  return true;
 });
-ipcMain.handle('speech:stop', () => true);
 ipcMain.handle('file:export', async (_, record) => {
   const result = await dialog.showSaveDialog(window, {
     title: 'Export experiment',
@@ -214,23 +173,19 @@ ipcMain.handle('file:export', async (_, record) => {
   await fs.writeFile(result.filePath, JSON.stringify(record, null, 2), 'utf8');
   return true;
 });
+const codex = registerCodex({ ipcMain, getWindow: () => window });
+const voice = registerVoice({ ipcMain, getWindow: () => window, app });
 app.whenReady().then(async () => {
-  const root = await (
-    await voiceInstaller
-  ).chooseVoiceRoot({
-    bundled: app.isPackaged ? path.join(process.resourcesPath, 'voices') : null,
-    development: app.isPackaged ? null : path.join(__dirname, '../.voice-runtime'),
-  });
-  localVoices = new LocalVoices(root, path.join(app.getPath('userData'), 'speech-cache'));
   const protocol = await bridge;
   await Promise.allSettled(
     ['robot', 'human'].map((actor) => protocol.resetChannel(bridgeDirectory(actor))),
   );
+  voice.ready?.();
   createWindow();
-  ensureVoices().catch(() => {});
 });
 app.on('window-all-closed', () => {
-  localVoices?.close();
   for (const c of requests.values()) c.abort();
+  codex.close?.();
+  voice.close?.();
   app.quit();
 });
