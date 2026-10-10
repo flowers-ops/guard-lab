@@ -7,7 +7,6 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { execFile } from 'node:child_process';
 import runtime from '../shared/runtime.cjs';
-import speech from '../electron/voices.cjs';
 import {
   requestTurn,
   waitForTurn,
@@ -201,17 +200,4 @@ test('schema validation covers required fields, types, bounds and choices', () =
     () => validateDecision(r, { action: 'hold_position', args: { invented: true } }),
     /Unexpected/,
   );
-});
-
-test('missing optional speech assets fall back rather than spawning a Windows binary', async () => {
-  const dir = await temporaryDirectory('guard-voice-');
-  const voices = new speech.LocalVoices(path.join(dir, 'absent'), dir);
-  try {
-    assert.deepEqual(voices.voices(), []);
-    assert.deepEqual(await voices.synthesize({ text: 'Hello', actor: 'robot' }), { native: true });
-    assert.equal(voices.workers.size, 0);
-  } finally {
-    voices.close();
-    await removeTemporary(dir);
-  }
 });

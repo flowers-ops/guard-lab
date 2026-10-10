@@ -5,6 +5,9 @@ import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { ROOT } from './paths.mjs';
 const require = createRequire(import.meta.url);
+// Speech models (Kokoro voices, Whisper speech-to-text) install from the app's setup screen.
+// Pass --voices to download them here as well.
+const withVoices = process.argv.includes('--voices');
 if (Number(process.versions.node.split('.')[0]) < 22) {
   console.error(
     'Install Node.js 22 or newer from https://nodejs.org, then run this command again.',
@@ -18,7 +21,7 @@ const fingerprint = createHash('sha256')
   .digest('hex');
 async function installed() {
   try {
-    require.resolve('vite');
+    for (const name of ['vite', 'kokoro-js', '@huggingface/transformers']) require.resolve(name);
     await fs.access(require('electron'));
     return true;
   } catch {
@@ -37,7 +40,26 @@ if (
   console.log(
     'Locked dependencies are already installed. Ready: npm run live or npm start. Use --force to reinstall.',
   );
-  process.exit(0);
+  await finish();
+  process.exit(process.exitCode || 0);
+}
+async function finish() {
+  if (!withVoices) {
+    console.log('Speech models install from the in-app setup screen (or: npm run voices:install).');
+    return;
+  }
+  const child = spawn(process.execPath, [path.join(ROOT, 'scripts', 'install-voices.mjs')], {
+    cwd: ROOT,
+    stdio: 'inherit',
+    windowsHide: true,
+  });
+  const [code] = await new Promise((resolve) =>
+    child.on('exit', (...args) => resolve(args)).on('error', () => resolve([1])),
+  );
+  if (code !== 0) {
+    console.error('Speech models were not installed. Retry later with: npm run voices:install');
+    process.exitCode = code || 1;
+  }
 }
 console.log(
   'Installing the locked dependencies. No account, API key, or model is required for demo mode.',
@@ -45,7 +67,17 @@ console.log(
 const install = spawn(
   process.platform === 'win32' ? 'npm.cmd' : 'npm',
   ['ci', '--no-audit', '--no-fund', '--no-progress'],
-  { cwd: ROOT, stdio: 'inherit', shell: process.platform === 'win32', windowsHide: true },
+  {
+    cwd: ROOT,
+    stdio: 'inherit',
+    shell: process.platform === 'win32',
+    windowsHide: true,
+    // onnxruntime-node would otherwise fetch optional CUDA libraries on Linux x64.
+    env: {
+      ...process.env,
+      ONNXRUNTIME_NODE_INSTALL_CUDA: process.env.ONNXRUNTIME_NODE_INSTALL_CUDA || 'skip',
+    },
+  },
 );
 install.on('error', (e) => {
   console.error('Could not run npm:', e.message);
@@ -70,4 +102,5 @@ install.on('exit', async (code) => {
   console.log(
     '\nReady. npm run live launches the recommended agent bridge; npm start launches the setup screen.\nRun npm run doctor for diagnostics. Read AGENTS.md before playing as an AI.',
   );
+  await finish();
 });

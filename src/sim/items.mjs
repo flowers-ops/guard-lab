@@ -1,7 +1,7 @@
 import { RULES, humanHasVision } from './rules.mjs';
 export const APPEARANCES = [
-  { id: 'male', label: 'Male', voice: 'piper:ryan', voiceName: 'Ryan' },
-  { id: 'female', label: 'Female', voice: 'piper:amy', voiceName: 'Amy' },
+  { id: 'male', label: 'Male', voice: 'kokoro:am_michael', voiceName: 'Michael' },
+  { id: 'female', label: 'Female', voice: 'kokoro:af_heart', voiceName: 'Heart' },
 ];
 export const ITEMS = [
   {
@@ -191,7 +191,7 @@ export function applyItemAction(s, action) {
     return ok('A portable recorder plays a management instruction.', {
       speech: RECORDING_TEXT,
       audioSource: 'recording',
-      voice: 'piper:ryan',
+      voice: 'kokoro:am_fenrir',
     });
   }
   if (action === 'use_smoke') {

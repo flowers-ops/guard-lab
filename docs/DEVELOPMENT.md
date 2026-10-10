@@ -2,28 +2,28 @@
 
 ## Architecture
 
-| Location                                          | Responsibility                                                                             |
-| ------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `src/sim/engine.mjs`                              | Pure initialState/applyHuman/applyTool/observe; authoritative consequences                 |
-| `src/sim/tools.mjs`                               | Guard capabilities, parameter schemas, objective/sensor prompt                             |
-| `src/sim/items.mjs`                               | Eight loadouts and gadget consequences                                                     |
-| `src/sim/human-agent.mjs`                         | Private human prompt, loadout choice, observations and dynamic actions                     |
-| `src/sim/perception.mjs`, `hearing.mjs`           | Camera/microphone evidence and visibility boundaries                                       |
-| `src/sim/random.mjs`, `status.mjs`                | Seeded chance and structural damage displays                                               |
-| `src/sim/agent.mjs`                               | Model response → one action; dialogue/context compaction                                   |
-| `src/scene/Chamber.jsx`, `rig.mjs`, `physics.mjs` | Procedural Three.js room, articulated rigs, contact/rebound motion                         |
-| `src/App.jsx`, `AlternateEncounter.jsx`           | Main and secondary turn scheduling, presentation, local archive                            |
-| `src/audio`                                       | Procedural SFX and English speech fallback                                                 |
-| `electron`                                        | Sandboxed window, provider HTTP requests, optional local voice workers, narrow preload IPC |
-| `shared`                                          | Platform runtime paths and public role-scoped bridge implementation                        |
-| `scripts`                                         | Setup, launch, agent CLI, generated docs, audit/source export, optional voice install/test |
-| `tests`                                           | Consequences, seed repeatability, collisions, private sensors and bridge protocol          |
+| Location                                          | Responsibility                                                                       |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `src/sim/engine.mjs`                              | Pure initialState/applyHuman/applyTool/observe; authoritative consequences           |
+| `src/sim/tools.mjs`                               | Guard capabilities, parameter schemas, objective/sensor prompt                       |
+| `src/sim/items.mjs`                               | Eight loadouts and gadget consequences                                               |
+| `src/sim/human-agent.mjs`                         | Private human prompt, loadout choice, observations and dynamic actions               |
+| `src/sim/perception.mjs`, `hearing.mjs`           | Camera/microphone evidence and visibility boundaries                                 |
+| `src/sim/random.mjs`, `status.mjs`                | Seeded chance and structural damage displays                                         |
+| `src/sim/agent.mjs`                               | Model response → one action; dialogue/context compaction                             |
+| `src/scene/Chamber.jsx`, `rig.mjs`, `physics.mjs` | Procedural Three.js room, articulated rigs, contact/rebound motion                   |
+| `src/App.jsx`, `src/ui/`                          | Turn scheduling, screens (setup, home, HUD, dock, settings), local archive           |
+| `src/audio`                                       | Procedural SFX, Kokoro playback, push-to-talk capture, system-speech fallback        |
+| `electron`                                        | Sandboxed window, Codex App Server client, voice utility process, narrow preload IPC |
+| `shared`                                          | Runtime paths, role-scoped bridge, Kokoro/Whisper model install and inference        |
+| `scripts`                                         | Setup, launch, agent CLI, generated docs, audit/source export, voice model install   |
+| `tests`                                           | Consequences, seed repeatability, collisions, private sensors and bridge protocol    |
 
 Presentation math is separated into `paths.mjs` (obstacle clearance), `motion.mjs` (step/glove/impact curves), `rig.mjs` (arms), `physics.mjs` (fixed-step projectile contacts), and `impact-fx.mjs` (bounded particle pools/post effects). Change these without changing outcomes. Particle buffers and line geometry are reused; transient GPU resources are disposed; rendering throttles when hidden. Reduced-motion preferences suppress camera shake/chromatic impact. Archives use asynchronous IndexedDB and only changed records are written.
 
 `contact-shadows.mjs` contains the depth/normal filtering for contact shadows, including transparent labels and particles. Its buffer is capped at 900 pixels wide and 65% of the display width. `Chamber.jsx` owns the lighting, materials, camera framing and visible props; `character.mjs` owns both human appearances. Adjust these together when changing art direction. Keep light power synchronized with blackout and flashlight rules. Cosmetic anticipation/rebound must stay within collision bounds; the spring can never extend beyond its resolved contact point. `audio/sfx.mjs` provides procedural, synchronized effects with a limiter and reusable noise buffers.
 
-The renderer consumes resolved events, including before/after snapshots and target positions. It does not roll dice, spend ammunition or inflict damage. Animations overlap with AI decision/speech preparation where safe; handoffs use filesystem notifications. `shared/voice-install.mjs` handles automatic startup installation, per-file progress, cache integrity, retry and installation leases; `VoiceSetup.jsx` presents compact status. Voice workers start on demand, cache synthesized speech locally, and are shared for repeated lines. The initial page loads a separate Three.js chunk. Production bundles contain no source maps.
+The renderer consumes resolved events, including before/after snapshots and target positions. It does not roll dice, spend ammunition or inflict damage. Animations overlap with AI decision/speech preparation where safe; handoffs use filesystem notifications. `electron/codex.cjs` finds a native Codex binary (settings path, `GUARD_LAB_CODEX`, PATH with JS shims resolved to the native executable, the ChatGPT desktop bundle, then a login shell), starts `codex app-server` with the user's plugins, MCP servers and coding tools disabled, and runs one ephemeral thread per encounter actor with the game's tools as dynamic tools. The first valid tool call is accepted and the turn interrupted, so each decision is exactly one action. `shared/voice-models.mjs` installs and runs Kokoro TTS and Whisper STT (transformers.js + onnxruntime-node) under app data `models/`; `electron/voice-worker.cjs` hosts it in an Electron utility process so inference never blocks the window.
 
 ## Work loop
 

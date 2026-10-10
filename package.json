@@ -18,7 +18,7 @@
     "docs:generate": "node scripts/generate-reference.mjs",
     "docs:check": "node scripts/generate-reference.mjs --check",
     "voices:install": "node scripts/install-voices.mjs",
-    "voices:test": "node scripts/test-voices.mjs",
+    "voices:test": "node scripts/install-voices.mjs --test",
     "dist": "npm run build && electron-builder --config electron-builder.config.cjs --publish never",
     "package:source": "node scripts/package-source.mjs",
     "audit:source": "node scripts/audit.mjs",
@@ -29,6 +29,8 @@
   "dependencies": {
     "@fontsource/dm-sans": "^5.3.0",
     "@fontsource/space-grotesk": "^5.3.0",
+    "@huggingface/transformers": "3.8.1",
+    "kokoro-js": "1.2.1",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

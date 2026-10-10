@@ -19,11 +19,19 @@ app.whenReady().then(async () => {
       ),
       true,
     );
+    const voice = await run('voice.status');
+    assert.equal(voice.tts.state, 'missing');
+    assert.equal(voice.stt.state, 'missing');
     assert.equal(
-      (await run('synthesize', { text: 'A test fixture.', actor: 'robot' })).native,
+      (await run('voice.synthesize', { text: 'A test fixture.', actor: 'robot' })).native,
       true,
     );
-    console.log('OK: built renderer, isolated preload and system-speech fallback');
+    assert.ok(
+      ['checking', 'ready', 'signed-out', 'missing', 'error'].includes(
+        (await run('codex.status')).state,
+      ),
+    );
+    console.log('OK: built renderer, isolated preload, voice and Codex status, speech fallback');
 
     const { waitForTurn, sendDecision } = await import('../shared/bridge.mjs');
     const { bridgeDirectory } = require('../shared/runtime.cjs');

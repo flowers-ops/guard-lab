@@ -10,7 +10,7 @@ These changes affect presentation only. The turn engine, guard prompt, tools and
 # 1.0.3
 
 - Live Codex uses compact exchanges that return immediately when the next turn arrives, short validated reply IDs and uninterrupted background rendering. An uninterrupted six-turn benchmark reduced median reaction after startup from 10.08 to 3.98 seconds with the same model/reasoning setting. See [measurements and limits](LATENCY.md).
-- Three animated dots above the robot show when it is thinking. Players can draft speech while waiting. Selected voices warm during setup; confirmed long dialogue starts playing before the remaining audio finishes preparing.
+- Three animated dots above the robot show when it is thinking. Players can draft speech while waiting. Kokoro warms at startup when installed; confirmed long dialogue starts playing before the remaining audio finishes preparing.
 - Readied glove poses use stable clearance hysteresis and safe obstruction checks. Renderer checks covered 481 frames beside the safe and while walking to the exit without clipping or repeated arm oscillation.
 - A short entry briefing explains the role's goal, persuasion, deception, striking the safe, consequences and one action per round. It does not modify the guard's prompt or reveal the player's intentions to it.
 

@@ -96,7 +96,7 @@ The launcher, Electron app and CLI all use `shared/runtime.cjs`. Default data ro
 | `GUARD_LAB_DATA_DIR`     | Override app data root; also isolates preferences, archive, speech cache and default bridge channels |
 | `GUARD_LAB_BRIDGE`       | Override robot channel directory                                                                     |
 | `GUARD_LAB_HUMAN_BRIDGE` | Override human channel directory                                                                     |
-| `GUARD_LAB_VOICES`       | Override optional speech assets root                                                                 |
+| `GUARD_LAB_CODEX`        | Absolute path of the Codex executable used for Codex App Server mode                                 |
 
 Set the same values for app and agents. Multiple app instances using one data root are prevented; separate roots allow independent games. A different root also avoids reusing old private preferences while testing a clean install.
 
